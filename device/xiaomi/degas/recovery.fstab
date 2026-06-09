@@ -1,0 +1,44 @@
+# Logical partitions (erofs + ext4 fallback)
+system       /system       erofs  ro  wait,slotselect,logical,first_stage_mount
+system       /system       ext4   ro  wait,slotselect,logical,first_stage_mount
+vendor       /vendor       erofs  ro  wait,slotselect,logical,first_stage_mount
+vendor       /vendor       ext4   ro  wait,slotselect,logical,first_stage_mount
+product      /product      erofs  ro  wait,slotselect,logical,first_stage_mount
+product      /product      ext4   ro  wait,slotselect,logical,first_stage_mount
+system_ext   /system_ext   erofs  ro  wait,slotselect,logical,first_stage_mount
+system_ext   /system_ext   ext4   ro  wait,slotselect,logical,first_stage_mount
+odm          /odm          erofs  ro  wait,slotselect,logical,first_stage_mount
+odm          /odm          ext4   ro  wait,slotselect,logical,first_stage_mount
+vendor_dlkm  /vendor_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
+vendor_dlkm  /vendor_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
+odm_dlkm     /odm_dlkm     erofs  ro  wait,slotselect,logical,first_stage_mount
+odm_dlkm     /odm_dlkm     ext4   ro  wait,slotselect,logical,first_stage_mount
+system_dlkm  /system_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
+system_dlkm  /system_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
+
+# userdata
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,gc_merge,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,atgc,age_extent_cache,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci
+
+# metadata — f2fs
+/dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,discard wait,check,formattable,first_stage_mount
+
+# cache
+/dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,noauto_da_alloc,discard wait,check,formattable
+
+# persist
+/dev/block/by-name/persist /mnt/vendor/persist ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable
+
+# misc
+/dev/block/by-name/misc /misc emmc defaults defaults
+
+# vbmeta
+/dev/block/by-name/vbmeta /vbmeta emmc defaults defaults
+/dev/block/by-name/vbmeta_vendor /vbmeta_vendor emmc defaults first_stage_mount,nofail,slotselect
+/dev/block/by-name/vbmeta_system /vbmeta_system emmc defaults first_stage_mount,nofail,slotselect
+
+# SD card
+/devices/platform/soc/11240000.mmc* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata
+
+# USB OTG
+/devices/platform/soc/11201000.usb0/11200000.xhci* auto vfat defaults voldmanaged=usbotg:auto
+/devices/platform/soc/11211000.usb1/11210000.xhci* auto vfat defaults voldmanaged=usbotg:auto
