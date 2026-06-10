@@ -43,6 +43,60 @@ static void wr(const char* s){
 
 __attribute__((constructor)) static void init(void){wr("=== km_intercept3 loaded ===\n");}
 
+/* ---------------------------------------------------------------------------
+ * PROPERTY OVERRIDE  —  fix the KeyMint version-binding (-33 INVALID_KEY_BLOB).
+ *
+ * The recovery ramdisk reports stale build props (security_patch=2022-04-05,
+ * release=12, no vendor patch). keymaster::GetOs{Version,Patchlevel} and
+ * GetVendorPatchlevel read these and the HAL pushes them into the MiTEE TA,
+ * which then binds/enforces them on every key. The /data key blob was bound to
+ * the REAL normal-boot values, so a mismatch makes the TA reject the blob.
+ *
+ * We override the handful of props the patchlevel helpers read so the TA is
+ * configured with the same values normal boot uses. libbase::GetProperty goes
+ * through __system_property_find + __system_property_read_callback; libcutils
+ * property_get goes through __system_property_get. We intercept all three.
+ * ------------------------------------------------------------------------- */
+static int km_streq(const char* a,const char* b){
+    if(!a||!b)return 0;int i=0;while(a[i]&&a[i]==b[i])i++;return a[i]==b[i];}
+
+static const char* const FAKE_N[4]={
+    "ro.build.version.security_patch",
+    "ro.build.version.release",
+    "ro.vendor.build.security_patch",
+    "ro.boot.security_patch"};
+static const char* const FAKE_V[4]={"2026-02-01","16","2026-02-01","2026-02-01"};
+static char fake_pi[4];   /* sentinel prop_info storage (addresses are tokens) */
+
+typedef void (*prop_cb)(void* cookie,const char* name,const char* value,unsigned int serial);
+
+const void* __system_property_find(const char* name){
+    typedef const void*(*fn)(const char*);static fn real=0;
+    if(!real&&dlsym)real=(fn)dlsym((void*)-1L,"__system_property_find");
+    for(int i=0;i<4;i++) if(km_streq(name,FAKE_N[i])){
+        wr("[KM prop-find] faking ");wr(name);wr("\n");
+        return (const void*)&fake_pi[i];}
+    return real?real(name):0;}
+
+void __system_property_read_callback(const void* pi,prop_cb cb,void* cookie){
+    if(pi>=(const void*)&fake_pi[0] && pi<=(const void*)&fake_pi[3]){
+        int i=(int)((const char*)pi-&fake_pi[0]);
+        wr("[KM prop-read] -> ");wr(FAKE_V[i]);wr("\n");
+        if(cb)cb(cookie,FAKE_N[i],FAKE_V[i],1);
+        return;}
+    typedef void(*fn)(const void*,prop_cb,void*);static fn real=0;
+    if(!real&&dlsym)real=(fn)dlsym((void*)-1L,"__system_property_read_callback");
+    if(real)real(pi,cb,cookie);}
+
+int __system_property_get(const char* name,char* value){
+    for(int i=0;i<4;i++) if(km_streq(name,FAKE_N[i])){
+        int j=0;while(FAKE_V[i][j]){value[j]=FAKE_V[i][j];j++;}value[j]=0;
+        wr("[KM prop-get] ");wr(name);wr(" -> ");wr(value);wr("\n");
+        return j;}
+    typedef int(*fn)(const char*,char*);static fn real=0;
+    if(!real&&dlsym)real=(fn)dlsym((void*)-1L,"__system_property_get");
+    return real?real(name,value):0;}
+
 /* keymint also loads the system libbinder — same VINTF symbols as the SM. */
 bool _ZN7android8internal9Stability24requiresVintfDeclarationERKNS_2spINS_7IBinderEEE(void* sp){
     wr("[KM] requiresVintfDeclaration -> false\n");return 0;}
@@ -114,9 +168,9 @@ static int beq(const char* a,const char* b){
     return !a[i]&&!b[i];}
 
 static const char* rbind(const char* p){
-    if(beq(p,"/dev/binder")||beq(p,"/dev/binderfs/binder")){
-        wr("[REDIR] binder -> /dev/newbfs/binder\n");
-        return "/dev/newbfs/binder";}
+    /* NATIVE-CONTEXT MODE: no redirect — share the native /dev/binderfs/binder
+     * context that recovery_real and our servicemanager use. See sm_stab3.c. */
+    (void)beq;
     return p;}
 
 int open(const char* p,int f,...){

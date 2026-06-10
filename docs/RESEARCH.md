@@ -1,9 +1,17 @@
 # FBE decrypt research log — Xiaomi 14T (`degas`)
 
 This is the detailed engineering log behind the `decrypt/` directory: how the
-keystore stack is brought up inside recovery, what works, exactly where it
-breaks, and what to try next. It is the English, cleaned‑up version of the
-working notes I kept while reverse‑engineering the FBE decrypt path.
+keystore stack is brought up inside recovery, what works, and exactly where —
+and why — it ultimately hits a hardware wall. It is the English, cleaned‑up
+version of the working notes I kept while reverse‑engineering the FBE decrypt
+path.
+
+**TL;DR:** the entire software chain works (binder context takeover →
+servicemanager bridge → keystore2 → KeyMint), but the stored metadata key is
+bound to the **Root of Trust** of normal boot. A custom recovery presents a
+different RoT, so the TEE refuses the blob with `INVALID_KEY_BLOB`. This is
+enforced in the secure world and cannot be bypassed from Android — see
+[Why it can't work from recovery](#why-it-cant-work-from-recovery-root-of-trust).
 
 If you only want the overview, read the main [`README.md`](../README.md) first.
 
@@ -106,9 +114,16 @@ handle them separately:
 
 - **Deploy `twrp_fix.so`** (the recovery shim). In the image‑baked flow it is
   preloaded automatically by the wrapper that `patch_touch.sh` installs (as
-  `/system/bin/throw_logger.so`). To (re)deploy it live instead, use the
-  `stop recovery` → push → `start recovery` sequence shown in
-  [Next steps](#next-steps).
+  `/system/bin/throw_logger.so`). To (re)deploy it live, you must replace the
+  file *and* restart `recovery_real` so it reloads the preload:
+  ```bash
+  aarch64-linux-gnu-gcc -shared -fPIC -nostdlib -O0 -std=c11 -o twrp_fix.so twrp_fix.c
+  adb shell 'stop recovery'; sleep 3
+  adb push twrp_fix.so /system/bin/throw_logger.so
+  adb shell 'start recovery'; sleep 8
+  ```
+  Bring the stack up with `from_scratch.sh` **before** the start‑up auto‑decrypt
+  matters (see the note in [The wall](#the-wall--begin-is-rejected-by-the-tee--33-invalid_key_blob)).
 - **Device‑mapper control node.** If `/dev/mapper/control` is missing, create it:
   `mknod /dev/mapper/control c $MAJ $MIN` with `MAJ:MIN` read from
   `/sys/class/misc/device-mapper/dev`.
@@ -131,12 +146,15 @@ setprop apexd.status activated
 5. **keystore2** registers 6 services including `IKeystoreService/default`.
 6. **keystore2 ↔ keymint link**: PROBE_WFS → FOUND, ASSOC → true, KeyMint
    version 300.
-7. **TWRP finds keystore2** (no NULL, no SIGABRT).
-8. **TWRP copies the real keystore DB** (86016 bytes) out of `/data` into
-   `/tmp/misc/keystore/`.
-9. **device‑mapper** is supported by the kernel; `/dev/mapper/control` created.
-10. **Decrypt progresses**: loads the progress spinner and scans partitions
-    (ODM, ODM DLKM, …) before it dies.
+7. **TWRP finds keystore2** via the servicemanager bridge (`[TWRP WFS] bridge
+   FOUND`) — no NULL, no SIGABRT.
+8. **The full unwrap chain runs**: `getSecurityLevel` → SecurityLevel binder
+   recovered (`[RSB-FIX] recovered handle=2`) → `createOperation` → KeyMint
+   `begin(DECRYPT, keymaster_key_blob, …)` is actually invoked.
+9. **Fresh KeyMint keys work in recovery** — `keystore_cli_v2 generate
+   --seclevel=tee` + `sign-verify` → *Sign 256 bytes, Verify OK*. The TEE is
+   healthy; see [The wall](#the-wall--begin-is-rejected-by-the-tee--33-invalid_key_blob).
+10. **device‑mapper** is supported by the kernel; `/dev/mapper/control` created.
 
 ---
 
@@ -163,43 +181,88 @@ setprop apexd.status activated
 
 ---
 
-## Current failure
+## The wall — `begin()` is rejected by the TEE (`-33 INVALID_KEY_BLOB`)
 
-With `twrp_fix` v3.2 (thread‑exit):
+Once the whole stack is up (servicemanager → keymint → keystore2) **and TWRP is
+restarted so its start‑up auto‑decrypt runs against our stack**, the metadata
+decrypt path reaches all the way into KeyMint and dies there:
+
 ```
-[twrp_fix] std::terminate RA=0x????????
-[twrp_fix] -> exit_thread
-E:Error retrieving decrypted data block device.
+[TWRP WFS] bridge FOUND
+[RSB-FIX] recovered handle=2
+I:Unable to decrypt metadata encryption
+I:FBE setup failed. Trying FDE...
 ```
-There is still a `std::terminate`, but now from a *different* source than
-HWComposer. The return address (`RA`) was not yet captured on the last run.
-
-<a id="next-steps"></a>
-## Next steps
-
-1. Capture the `RA=` from the second `std::terminate` to identify the throwing
-   library.
-2. Check whether `[DM …]` lines appear — that tells you if decrypt reached
-   `dm-default-key` at all.
-3. See what TWRP opens (`[O] …`) right before the crash.
-
-```bash
-aarch64-linux-gnu-gcc -shared -fPIC -nostdlib -O0 -std=c11 -o twrp_fix.so twrp_fix.c
-adb shell 'stop recovery 2>/dev/null; true'; sleep 3
-adb push twrp_fix.so /system/bin/throw_logger.so
-adb shell 'start recovery 2>/dev/null; true'; sleep 8
-adb shell 'twrp decrypt <pin>'; sleep 3
-adb shell 'grep -E "\[twrp_fix\]|\[DM|\[TWRP|\[O\]" /tmp/recovery.log | tail -20'
+and in `keystore2`:
+```
+security_level.rs:374: Failed to begin operation.
+  0: security_level.rs:924: upgrade_keyblob_if_required_with(key_id=None)
+  2: Error::Km(r#INVALID_KEY_BLOB)
 ```
 
-### Hypotheses for the second terminate
-- **A — HWComposer again** (a different DRM commit). RA would point into
-  `hwcomposer.mtk_common.so`. Fix: fake‑success the DRM ioctls (type `0x64`) in
-  `twrp_fix.c`.
-- **B — the real decrypt code** throws an uncaught C++ exception. RA would point
-  into `libfscrypttwrp.so` or `libvold.so`. Fix: find what throws.
-- **C — `dm-default-key` unavailable** → `DM_TABLE_LOAD` returns EINVAL →
-  exception. RA would point into `libdm.so`; you'd see `[DM FAIL]` lines.
+`vold`'s `KeyStorage` unwraps the metadata key by running the 219‑byte
+`keymaster_key_blob` through KeyMint `begin(DECRYPT, …)`. KeyMint returns
+**ErrorCode `-33` = `INVALID_KEY_BLOB`**: the TEE cannot decrypt/authenticate the
+blob at all. (Note this is *not* `-62 KEY_REQUIRES_UPGRADE`, which is what a pure
+OS/patch‑level mismatch would produce.)
+
+> The manual `twrp decrypt <pin>` CLI is a *cached* early‑bail after the first
+> failure (`E:Error retrieving decrypted data block device.`, no service lookup).
+> The real, full attempt is the one TWRP runs automatically at start‑up — read it
+> from `/tmp/recovery.log` (`bridge FOUND` … `Unable to decrypt metadata`). So the
+> stack must already be up *before* `start recovery`.
+
+## Things that were ruled out
+
+KeyMint derives a key blob's wrapping key (KEK) from
+`f(device_master_key, APPLICATION_ID, APPLICATION_DATA, ROOT_OF_TRUST)`, plus a
+version check on top. Each fixable input was tested and eliminated:
+
+1. **KeyMint itself is healthy.** Using `keystore_cli_v2` in recovery,
+   `generate --seclevel=tee` + `sign-verify` → *Sign 256 bytes, Verify OK*. A key
+   **created in recovery works in recovery** — the TEE/MITEE trustlet is fully
+   functional. Only the *stored* blob is rejected.
+2. **OS version / OS patch‑level — not the cause.** Recovery's ramdisk reports
+   stale props (`release=12`, `security_patch=2022-04-05`). We hooked
+   `__system_property_find`/`_read_callback`/`_get` in `km_intercept3.c` to feed
+   KeyMint the real values (`release=16`, `2026-02-01`); confirmed it read them.
+   `-33` was unchanged. (And a patch‑level mismatch would be `-62`, not `-33`.)
+3. **`APPLICATION_ID` — verified byte‑for‑byte correct.** We dumped the exact
+   `begin()` parcel `keystore2` sends to KeyMint (ioctl hook in `ks2_log.c`,
+   matched by the blob signature) and parsed it: it carries the raw 219‑byte blob
+   and `APPLICATION_ID` (tag `0x90000259`) = a 64‑byte value. Computed
+   independently, `vold`'s canonical scheme
+   `SHA512( "Android secdiscardable SHA512".resize(128,'\0') + secdiscardable )`
+   produces the **identical** 64 bytes. So `libfscrypttwrp` builds the app‑id
+   exactly like the `vold` that created the key (same `secdiscardable` file →
+   same value). `APPLICATION_DATA` is not used (also correct).
+4. **The blob is forwarded unmodified.** The 219 bytes in the parcel match the
+   on‑disk `keymaster_key_blob` byte‑for‑byte; `keystore2` does not mangle it.
+
+## Why it can't work from recovery (Root of Trust)
+
+With the device master key, `APPLICATION_ID`, `APPLICATION_DATA` and OS
+patch‑level all accounted for, the **only** remaining KEK input that differs
+between normal boot and TWRP is the **Root of Trust** —
+`{verifiedBootKey, deviceLocked, verifiedBootState, verifiedBootHash}` — and, on
+some MTK trustlets, the boot‑image‑derived `BOOT_PATCHLEVEL` folded into the KEK.
+
+Both are latched into the TEE by the bootloader over a secure channel **before**
+the HLOS starts, based on the image it actually booted. Booting a custom TWRP
+image presents the trustlet a different Root of Trust than the stock boot image
+does, so the metadata KEK — bound at creation time to the normal‑boot RoT — can
+no longer be reproduced. The TEE therefore refuses the blob with
+`INVALID_KEY_BLOB`. This is exactly why the *same* key unwraps fine in normal
+boot (matching RoT) and is rejected in recovery.
+
+This binding is enforced inside the secure world and is not reachable from the
+HLOS. **Conclusion: on this device, decrypting `/data` from a custom recovery is
+not achievable.** The entire software chain (binder context takeover, the
+servicemanager bridge, keystore2, KeyMint, fresh‑key crypto) works; the wall is
+purely the hardware‑enforced RoT binding. The only theoretical bypass would be
+patching the version/RoT check *inside* the MITEE trustlet, which lives in the
+secure world and cannot be touched from Android. The data itself remains
+accessible the normal way: by booting the device normally (where it decrypts).
 
 ---
 

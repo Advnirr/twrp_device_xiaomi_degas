@@ -86,12 +86,13 @@ adb shell "mount --bind /mnt_sys/system/etc/vintf /system/etc/vintf" && echo "  
 adb shell "mount --bind /mnt_sys/system/lib64/libbinder.so /system/lib64/libbinder.so" && echo "  ok libbinder"
 adb shell "mount --bind /mnt_sys/system/lib64/libbinder_ndk.so /system/lib64/libbinder_ndk.so" && echo "  ok libbinder_ndk"
 
-# Create a fresh private binderfs and point /dev/binder at it.
-adb shell "mkdir -p /dev/newbfs"
-adb shell "mountpoint -q /dev/newbfs || mount -t binder -o max=1048576 none /dev/newbfs"
-adb shell "ls /dev/newbfs/" && echo "  ok newbfs"
-
-adb shell "/tmp/bind_mount /dev/newbfs/binder /dev/binderfs/binder" && echo "  ok binder redirect"
+# NATIVE-CONTEXT MODE: we deliberately do NOT create a private newbfs anymore.
+# recovery_real opened /dev/binderfs/binder at boot (fd held for the process
+# lifetime); a separate binderfs would put our SM on a different binder context
+# that TWRP can never see. Instead our servicemanager takes over the context
+# manager role on the SAME native /dev/binderfs/binder that TWRP is already on,
+# so TWRP's existing fd routes handle-0 transactions to us. The shims no longer
+# redirect /dev/binder (see rbind() in sm_stab3.c / km_intercept3.c / ks2_log.c).
 
 # APEX linker symlink — MANDATORY, else every /mnt_sys/system/bin/* binary
 # fails with "No such file or directory" (its interpreter is the APEX linker).

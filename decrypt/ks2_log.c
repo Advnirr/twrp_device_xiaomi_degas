@@ -148,14 +148,62 @@ const char* AIBinder_getDescriptor(const void* binder){
     const char* r=real?real(binder):0;
     wr("[KS2 DESC] ");wr(r?r:"null");wr("\n");return r;}
 
+/* ── BEGIN-capture: dump the begin() request parcel keystore2 sends to keymint.
+ * Identify it by the metadata keymaster_key_blob signature, hexdump the whole
+ * parcel so APPLICATION_ID / APPLICATION_DATA / purpose can be parsed offline. */
+static void wr_hexbuf(const unsigned char* p,unsigned long n){
+    const char* H="0123456789abcdef";
+    char line[2*32+2];
+    unsigned long off=0;
+    while(off<n){
+        unsigned long m=n-off; if(m>32)m=32;
+        int j=0;
+        for(unsigned long k=0;k<m;k++){unsigned char c=p[off+k];line[j++]=H[c>>4];line[j++]=H[c&0xf];}
+        line[j++]='\n';line[j]=0;wr(line);off+=m;}}
+
+static int find_sig(const unsigned char* p,unsigned long n,const unsigned char* s,int sl){
+    if(n<(unsigned long)sl)return 0;
+    for(unsigned long i=0;i+sl<=n;i++){int k=0;while(k<sl&&p[i+k]==s[k])k++;if(k==sl)return 1;}
+    return 0;}
+
+int ioctl(int fd,unsigned long req,long arg){
+    typedef int(*fn)(int,unsigned long,long);
+    static fn real=0;
+    if(!real&&dlsym)real=(fn)dlsym((void*)-1L,"ioctl");
+    if(!real)return -1;
+    if(req==0xC0306201ul && arg){
+        unsigned long* b=(unsigned long*)arg;
+        unsigned long wsize=b[0];
+        unsigned char* wbuf=(unsigned char*)b[2];
+        if(wsize>=4+64 && wbuf && *(unsigned int*)wbuf==0x40406300u){ /* BC_TRANSACTION */
+            unsigned char* btd=wbuf+4;
+            unsigned int code=*(unsigned int*)(btd+16);
+            unsigned long dsize=*(unsigned long*)(btd+32);
+            unsigned char* dbuf=(unsigned char*)*(unsigned long*)(btd+48);
+            static const unsigned char SIG[8]={0xce,0xb1,0x04,0x88,0x30,0xb1,0x4f,0xda};
+            if(dbuf && dsize>0 && dsize<8192 && find_sig(dbuf,dsize,SIG,8)){
+                char nb[16];int i=15;nb[15]=0;unsigned long v=dsize;
+                if(!v)nb[--i]='0';while(v){nb[--i]=(char)('0'+v%10);v/=10;}
+                wr("[BEGINDUMP] code=");
+                { char cb[12];int ci=11;cb[11]=0;unsigned int cv=code;
+                  if(!cv)cb[--ci]='0';while(cv){cb[--ci]=(char)('0'+cv%10);cv/=10;} wr(cb+ci); }
+                wr(" size=");wr(nb+i);wr("\n[BEGINDUMP-HEX]\n");
+                wr_hexbuf(dbuf,dsize);
+                wr("[BEGINDUMP-END]\n");
+            }
+        }
+    }
+    return real(fd,req,arg);
+}
+
 static int beq(const char* a,const char* b){
     if(!a||!b)return 0;int i=0;
     while(a[i]&&b[i]&&a[i]==b[i])i++;return !a[i]&&!b[i];}
 
 static const char* rbind(const char* p){
-    if(beq(p,"/dev/binder")||beq(p,"/dev/binderfs/binder")){
-        wr("[REDIR] binder -> /dev/newbfs/binder\n");
-        return "/dev/newbfs/binder";}
+    /* NATIVE-CONTEXT MODE: no redirect — share the native /dev/binderfs/binder
+     * context that recovery_real and our servicemanager use. See sm_stab3.c. */
+    (void)beq;
     return p;}
 
 int open(const char* p,int f,...){

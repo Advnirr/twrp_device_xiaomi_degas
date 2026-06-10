@@ -138,8 +138,12 @@ static int sw(const char* s,const char* p){
     while(p[i]&&s[i]&&p[i]==s[i])i++;return !p[i];}
 
 static const char* rbind(const char* p){
-    if(beq(p,"/dev/binder")||beq(p,"/dev/binderfs/binder")){
-        wr("[REDIR] /dev/newbfs/binder\n");return "/dev/newbfs/binder";}
+    /* NATIVE-CONTEXT MODE: do NOT redirect to a private binderfs. recovery_real
+     * already holds /dev/binderfs/binder open (fd opened at boot); using a
+     * separate newbfs context puts us on a DIFFERENT binder context, so TWRP's
+     * service lookups never see what we register. Open the native binder so our
+     * SM becomes context manager of the very context TWRP is already on. */
+    (void)beq;
     return p;}
 
 /* Paths worth tracing while hunting the ELOOP source. */
