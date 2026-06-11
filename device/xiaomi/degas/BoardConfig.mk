@@ -46,6 +46,15 @@ BOARD_KERNEL_CMDLINE := console=tty0 root=/dev/ram nosoftlockup transparent_huge
 BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
 BOARD_USES_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
+
+# NOTE: the 215 vendor kernel modules (touch/display/UFS) can't be packed
+# natively here — this is a TARGET_NO_KERNEL build, and a prebuilt vendor_boot
+# ramdisk fragment (DLKM *or* PLATFORM type) is not pulled into the recovery
+# first-stage initramfs, so the modules never load (black screen / bootloop).
+# They are grafted in by patch_touch_clean.sh, which combines the stock module
+# ramdisk (+ patched touch .ko) with the freshly built TWRP ramdisk. The init.rc
+# and Goodix firmware ARE baked natively (device/.../recovery/root/), so the
+# repack only has to deal with the modules.
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 104857600
 # vendor_boot partition is 64 MB on degas — needed so AVB add_hash_footer gets a
 # size (build was failing at the footer step with an empty --partition_size).
