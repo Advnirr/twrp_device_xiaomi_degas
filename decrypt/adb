@@ -1,3 +1,0 @@
-#!/bin/bash
-/usr/bin/adb "$@" 2>&1 | grep -v 'failed to find generated linker configuration'
-exit ${PIPESTATUS[0]}

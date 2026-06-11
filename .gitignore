@@ -14,14 +14,14 @@
 !/LICENSE
 !/CONTRIBUTING.md
 !/.github/
-!/docs/
 !/screenshots/
-!/patch_touch.sh
 !/patch_touch_clean.sh
 !/xiaomi_touch_common_patched.ko
 
-# Decrypt research (LD_PRELOAD shims + orchestration scripts)
-!/decrypt/
+# tools/ is also an AOSP build dir — track only our own utility, nothing else.
+!/tools/
+/tools/*
+!/tools/slot_switch.py
 
 # --- TWRP device tree --------------------------------------------------------
 # Re-include device/, but only the xiaomi/degas branch (other vendors that the
@@ -32,19 +32,7 @@
 /device/xiaomi/*
 !/device/xiaomi/degas/
 
-# --- Build artifacts inside the research dir (rebuilt from the .c sources) ----
-/decrypt/sm_stab3.so
-/decrypt/km_intercept3.so
-/decrypt/ks2_log.so
-/decrypt/hwsm_log.so
-/decrypt/twrp_fix.so
-/decrypt/throw_logger_alt.so
-/decrypt/bind_mount
-
-# --- Local-only working files ------------------------------------------------
-# The Russian-language working log; the English version lives in docs/RESEARCH.md
-/PROJECT_DUMP.md
+# --- Local-only working files / build artifacts ------------------------------
 # Built recovery images belong in GitHub Releases, not in git history.
-/twrp_degas-vendor_boot.img
-/twrp_degas-vendor_boot-touch.img
+/twrp_degas-vendor_boot*.img
 *.log

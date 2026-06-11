@@ -16,10 +16,10 @@
 #   slot_switch.py set a|b           # make slot A or B active for next boot
 #   slot_switch.py set a|b --dry-run # build+validate the new struct, write nothing
 #
-# Runs on the host and drives the device over `adb` (the wrapper in this dir).
+# Runs on the host and drives the device over adb.
 import sys, os, subprocess, struct, zlib, tempfile
 
-ADB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adb")
+ADB = "adb"
 MISC = "/dev/block/by-name/misc"
 OFF = 2048
 SIZE = 32
