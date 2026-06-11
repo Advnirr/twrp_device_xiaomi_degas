@@ -94,6 +94,26 @@ on boot
 # runs after init.rc's early-init (=0) and before `on fs` (which reads it).
 on init
     setprop sys.usb.configfs 1
+
+# USB MTP over ConfigFS. TWRP's init.rc has triggers for adb/fastboot/sideload
+# but none for mtp,adb, so enabling MTP would leave the UDC unbound. Create the
+# ffs.mtp function and mount its functionfs at boot (runs after init.rc's own
+# `on fs && configfs=1` that creates g1), then bind mtp+adb once TWRP's
+# twrpmtp-ffs daemon has written the descriptors (sys.usb.ffs.mtp.ready=1).
+on fs && property:sys.usb.configfs=1
+    mkdir /config/usb_gadget/g1/functions/ffs.mtp
+    mkdir /dev/usb-ffs/mtp 0770 shell shell
+    # NB: this kernel's functionfs rejects the `dmode` option (Invalid argument);
+    # keep it to the same simple options adb uses.
+    mount functionfs mtp /dev/usb-ffs/mtp uid=2000,gid=2000
+
+on property:sys.usb.config=mtp,adb && property:sys.usb.ffs.ready=1 && property:sys.usb.ffs.mtp.ready=1 && property:sys.usb.configfs=1
+    write /config/usb_gadget/g1/idProduct 0x4EE2
+    write /config/usb_gadget/g1/configs/b.1/strings/0x409/configuration "mtp,adb"
+    symlink /config/usb_gadget/g1/functions/ffs.mtp /config/usb_gadget/g1/configs/b.1/f1
+    symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f2
+    write /config/usb_gadget/g1/UDC ${sys.usb.controller}
+    setprop sys.usb.state ${sys.usb.config}
 RC_EOF
 chmod 644 "$TWRP_RD/init.recovery.mt6897.rc"
 echo "  [+] firmware + touch init.recovery.mt6897.rc added"
