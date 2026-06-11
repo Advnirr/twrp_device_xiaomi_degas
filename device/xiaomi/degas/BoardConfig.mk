@@ -74,6 +74,8 @@ TARGET_COPY_OUT_VENDOR := vendor
 
 # TWRP Settings
 TW_THEME := portrait_hdpi
+# Maintainer tag shown next to the version (e.g. "3.7.1_12-Advnirr").
+TW_DEVICE_VERSION := Advnirr
 RECOVERY_SDCARD_ON_DATA := true
 TARGET_RECOVERY_PIXEL_FORMAT := BGRA_8888
 TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
