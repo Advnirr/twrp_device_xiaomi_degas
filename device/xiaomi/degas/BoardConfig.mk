@@ -79,6 +79,14 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 # TW_USE_LEGACY_BATTERY_SERVICES, TWRP queries android.hardware.health over
 # binder, which is unreliable in standalone recovery → stuck at 100% / only
 # updates after a manual restart. Legacy mode reads the gauge node directly.
+# USB: MTP is temporarily excluded. TWRP's init.rc has no ConfigFS trigger for
+# `mtp,adb`, so enabling MTP unbinds the gadget UDC and never rebinds it -> all
+# USB (adb included) dies. Excluding MTP makes the boot default plain `adb`, so
+# the ConfigFS gadget (adb/fastboot/sideload) comes up cleanly. TODO: re-enable
+# MTP together with a proper `on property:sys.usb.config=mtp,adb ... configfs=1`
+# trigger + ffs.mtp function.
+TW_EXCLUDE_MTP := true
+
 TW_USE_LEGACY_BATTERY_SERVICES := true
 # Pin the real gauge node (battery + bms are both type=Battery, plus many
 # charger nodes → auto-detect was ambiguous). capacity/status track real charge.

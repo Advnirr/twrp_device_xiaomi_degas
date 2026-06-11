@@ -79,12 +79,21 @@ chmod 644 "$TWRP_RD/vendor/firmware/goodix"* "$TWRP_RD/lib/firmware/goodix"*
 # init.recovery.mt6897.rc is loaded by init (ro.hardware=mt6897). Create it with
 # ONLY the touch sysfs writes (clean: no decrypt services).
 tee "$TWRP_RD/init.recovery.mt6897.rc" > /dev/null << 'RC_EOF'
+# Touch driver bring-up
 on early-init
     write /sys/class/touch/touch_dev/enable_touch_raw 0
 
 on boot
     write /sys/class/touch/touch_dev/enable_touch_raw 0
     write /sys/class/touch/touch_dev/panel_display "U"
+
+# USB: force the ConfigFS gadget. TWRP's init.rc hardcodes sys.usb.configfs=0,
+# which drives the legacy /sys/class/android_usb path — that node does not exist
+# on MT6897 (Android 16), so adb/MTP never enumerate. The ConfigFS path (g1
+# gadget) is already present in init.rc and works once configfs=1. `on init`
+# runs after init.rc's early-init (=0) and before `on fs` (which reads it).
+on init
+    setprop sys.usb.configfs 1
 RC_EOF
 chmod 644 "$TWRP_RD/init.recovery.mt6897.rc"
 echo "  [+] firmware + touch init.recovery.mt6897.rc added"
