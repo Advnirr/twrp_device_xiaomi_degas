@@ -47,6 +47,9 @@ BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
 BOARD_USES_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 104857600
+# vendor_boot partition is 64 MB on degas — needed so AVB add_hash_footer gets a
+# size (build was failing at the footer step with an empty --partition_size).
+BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
 
 # Partitions
 AB_OTA_UPDATER := true
@@ -71,6 +74,15 @@ TW_HAPTICS_OEM_VIBRATOR := true
 # Touch and display
 BOARD_HAS_MTK_HARDWARE := true
 TW_INPUT_BLACKLIST := "hbtp_vm"
+
+# Battery — read sysfs directly instead of the health HAL. Without
+# TW_USE_LEGACY_BATTERY_SERVICES, TWRP queries android.hardware.health over
+# binder, which is unreliable in standalone recovery → stuck at 100% / only
+# updates after a manual restart. Legacy mode reads the gauge node directly.
+TW_USE_LEGACY_BATTERY_SERVICES := true
+# Pin the real gauge node (battery + bms are both type=Battery, plus many
+# charger nodes → auto-detect was ambiguous). capacity/status track real charge.
+TW_CUSTOM_BATTERY_PATH := /sys/class/power_supply/battery
 # TW_SCREEN_BLANK_ON_BOOT := true
 # TW_NO_SCREEN_BLANK := true
 # TW_NO_SCREEN_TIMEOUT := true
@@ -79,11 +91,12 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 BOARD_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
 
 # ── Encryption ────────────────────────────────────────
-TW_INCLUDE_CRYPTO            := true
-TW_INCLUDE_CRYPTO_FBE        := true
-TW_INCLUDE_METADATA_DECRYPT  := true
-BOARD_USES_METADATA_PARTITION := true
-# TW_CRYPTO_USE_SYSTEM_VOLD := true
+# FBE decrypt is not achievable from recovery on this device (TEE Root-of-Trust
+# binding — see docs/RESEARCH.md), so the crypto stack is intentionally NOT
+# included. It pulled in ~11 MB of keymaster/keymint/gatekeeper/vold libs that
+# would push the combined vendor_boot over the 64 MB partition. /data is shown
+# as encrypted/unmountable; Format Data still works.
+# TW_INCLUDE_CRYPTO / TW_INCLUDE_CRYPTO_FBE / TW_INCLUDE_METADATA_DECRYPT — removed.
 
 # ── AVB ───────────────────────────────────────────────
 BOARD_AVB_ENABLE                          := true

@@ -31,20 +31,6 @@ PRODUCT_PACKAGES += \
     android.hardware.fastboot@1.0-impl-mock \
     fastbootd
 
-# Modules and Libraries
-TARGET_RECOVERY_DEVICE_MODULES += \
-    libfs_mgr \
-    libion \
-    libxml2 \
-    libkeymaster4 \
-    android.hardware.keymaster@4.0
-
-TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libfs_mgr.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libion.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libxml2.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/libkeymaster4.so
-
 # VNDK
 PRODUCT_TARGET_VNDK_VERSION := 34
 
@@ -54,16 +40,7 @@ PRODUCT_PACKAGES += \
     update_verifier \
     update_engine_sideload
 
-# ── Vold + FBE Decrypt ────────────────────────────────
-PRODUCT_PACKAGES += \
-    vold
-
-# ── KeyMint / Gatekeeper ──
-PRODUCT_PACKAGES += \
-    android.hardware.gatekeeper@1.0-impl \
-    android.hardware.gatekeeper@1.0-service \
-    
-# ── Health HAL ───────────────
-PRODUCT_PACKAGES += \
-    android.hardware.health@2.0-impl \
-    android.hardware.health@2.0-service
+# NOTE: FBE decrypt is parked (TEE RoT-bound, unreachable from recovery), so the
+# vold / keymaster / gatekeeper packages were removed — they only bloated the
+# ramdisk. The health@2.0 HAL was also dropped: battery now reads sysfs directly
+# (TW_USE_LEGACY_BATTERY_SERVICES), so the HAL is no longer needed.

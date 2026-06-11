@@ -16,27 +16,40 @@ odm_dlkm     /odm_dlkm     ext4   ro  wait,slotselect,logical,first_stage_mount
 system_dlkm  /system_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
 system_dlkm  /system_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
 
-# userdata
-/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,gc_merge,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,atgc,age_extent_cache,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci
+# userdata — FBE, cannot be decrypted from recovery on this device (TEE RoT-bound).
+# Kept mountable=false in practice; present for Format Data / Wipe and raw image backup.
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,gc_merge,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,atgc,age_extent_cache,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci;flags=display="Data (encrypted)";backup=0;wipeingui;canbewiped
 
 # metadata — f2fs
 /dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,discard wait,check,formattable,first_stage_mount
 
 # cache
-/dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,noauto_da_alloc,discard wait,check,formattable
+/dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,noauto_da_alloc,discard wait,check,formattable;flags=display="Cache"
 
 # persist
-/dev/block/by-name/persist /mnt/vendor/persist ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable
+/dev/block/by-name/persist /mnt/vendor/persist ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable;flags=display="Persist"
 
 # misc
 /dev/block/by-name/misc /misc emmc defaults defaults
 
-# vbmeta
-/dev/block/by-name/vbmeta /vbmeta emmc defaults defaults
-/dev/block/by-name/vbmeta_vendor /vbmeta_vendor emmc defaults first_stage_mount,nofail,slotselect
-/dev/block/by-name/vbmeta_system /vbmeta_system emmc defaults first_stage_mount,nofail,slotselect
+# ── Physical partitions — raw image backup/restore ──────────────────────────
+# NOTE: this build's TWRP does not append the slot suffix for `slotselect` on
+# by-name nodes that lack a base (unsuffixed) symlink (boot/init_boot/vendor_boot/
+# dtbo/vbmeta only expose *_a / *_b). We therefore pin the active slot (_a)
+# explicitly for those. super / vbmeta_system / vbmeta_vendor have base symlinks
+# that already resolve to the active slot, so they need no suffix.
+# TODO(slot-B): make slot-aware via a ueventd base-symlink rule or fixed slot detect.
+/dev/block/by-name/boot_a        /boot         emmc  defaults  defaults;flags=display="Boot";backup=1
+/dev/block/by-name/init_boot_a   /init_boot    emmc  defaults  defaults;flags=display="Init Boot";backup=1;flashimg=1
+/dev/block/by-name/vendor_boot_a /vendor_boot  emmc  defaults  defaults;flags=display="Vendor Boot";backup=1
+/dev/block/by-name/dtbo_a        /dtbo         emmc  defaults  defaults;flags=display="DTBO";backup=1;flashimg=1
+/dev/block/by-name/super         /super        emmc  defaults  defaults;flags=display="Super";backup=1
 
-# SD card
+/dev/block/by-name/vbmeta_a       /vbmeta         emmc  defaults  defaults;flags=display="Vbmeta";backup=1;flashimg=1
+/dev/block/by-name/vbmeta_system  /vbmeta_system  emmc  defaults  defaults;flags=display="Vbmeta System";backup=1;flashimg=1
+/dev/block/by-name/vbmeta_vendor  /vbmeta_vendor  emmc  defaults  defaults;flags=display="Vbmeta Vendor";backup=1;flashimg=1
+
+# SD card (no physical slot on degas/14T, kept for completeness)
 /devices/platform/soc/11240000.mmc* auto auto defaults voldmanaged=sdcard1:auto,encryptable=userdata
 
 # USB OTG

@@ -17,6 +17,7 @@
 !/docs/
 !/screenshots/
 !/patch_touch.sh
+!/patch_touch_clean.sh
 !/xiaomi_touch_common_patched.ko
 
 # Decrypt research (LD_PRELOAD shims + orchestration scripts)
