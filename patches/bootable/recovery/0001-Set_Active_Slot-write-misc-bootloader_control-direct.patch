@@ -1,0 +1,109 @@
+From 05c683bd4046531b3ca489dae6218a3ff4dbeb1b Mon Sep 17 00:00:00 2001
+From: Mikhail Mlhcnn <yagodkaworld@gmail.com>
+Date: Thu, 11 Jun 2026 17:06:19 +0300
+Subject: [PATCH] Set_Active_Slot: write misc bootloader_control directly (no
+ binder)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+IBootControl::getService() (HIDL boot HAL over hwbinder) blocks forever in
+standalone recovery — there is no hwservicemanager — so "Change Slot" hangs on
+the progress bar. Write the standard bootloader_control struct in the misc
+partition directly instead (offset 2048, magic "BCAB", crc32 over the first 28
+bytes): set the target slot priority 15 / tries 7 / not-successful, demote the
+other to 14, recompute crc32. Reconstructs the struct if misc was erased.
+
+No binder, no HAL. Validated on degas (MT6897): slot switches, bootloader_control
+stays crc-valid, no hang.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Change-Id: I2b23d81e9932ef890251194f86cb5b8b32949edd
+---
+ partitionmanager.cpp | 63 +++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 50 insertions(+), 13 deletions(-)
+
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 2766b4c0..e7ed363f 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -3292,6 +3292,53 @@ void TWPartitionManager::Override_Active_Slot(const string& Slot) {
+ 	PartitionManager.Update_System_Details();
+ }
+ 
++// Direct A/B slot switch via the misc partition's bootloader_control struct.
++// The stock path (IBootControl::getService() -> setActiveBootSlot) talks to the
++// boot HAL over hwbinder; in standalone recovery there is no hwservicemanager,
++// so getService() blocks forever and "Change Slot" hangs on the progress bar.
++// The bootloader picks the slot from a standard bootloader_control struct at
++// offset 2048 of misc (magic "BCAB", crc32 over the first 28 bytes). We do the
++// read-modify-write directly here — no binder, no HAL.
++static bool TWRP_Set_Active_Slot_Misc(int slot_number) {
++	const char* misc_path = "/dev/block/by-name/misc";
++	const off_t BC_OFFSET = 2048;
++	const uint32_t BC_MAGIC = 0x42414342; // "BCAB"
++	int fd = open(misc_path, O_RDWR);
++	if (fd < 0) {
++		LOGERR("Set_Active_Slot: cannot open %s\n", misc_path);
++		return false;
++	}
++	unsigned char b[32];
++	bool ok = (pread(fd, b, sizeof(b), BC_OFFSET) == (ssize_t)sizeof(b));
++	if (ok) {
++		uint32_t magic;
++		memcpy(&magic, b + 4, 4);
++		if (magic != BC_MAGIC) {
++			// misc erased / uninitialised — build a fresh struct
++			memset(b, 0, sizeof(b));
++			memcpy(b + 4, &BC_MAGIC, 4);
++			b[8] = 1; // version
++			b[9] = 2; // nb_slot = 2
++		}
++		memcpy(b, slot_number == 0 ? "_a\0\0" : "_b\0\0", 4);
++		// slot_metadata byte: priority[0:4] | tries_remaining[4:7] | successful[7]
++		// Active slot -> priority 15, full retries, not-yet-successful (0x7f).
++		// Other slot  -> priority 14 so the active one always wins (0x7e).
++		b[12] = (slot_number == 0) ? 0x7f : 0x7e; // slot A
++		b[14] = (slot_number == 1) ? 0x7f : 0x7e; // slot B
++		uint32_t crc = crc32(0, b, 28);
++		memcpy(b + 28, &crc, 4);
++		ok = (pwrite(fd, b, sizeof(b), BC_OFFSET) == (ssize_t)sizeof(b));
++		if (ok) fsync(fd);
++	}
++	close(fd);
++	if (ok)
++		LOGINFO("Set_Active_Slot: wrote slot %s to misc bootloader_control\n", slot_number == 0 ? "A" : "B");
++	else
++		LOGERR("Set_Active_Slot: failed to update misc bootloader_control\n");
++	return ok;
++}
++
+ void TWPartitionManager::Set_Active_Slot(const string& Slot) {
+ 	if (Slot != "A" && Slot != "B") {
+ 		LOGERR("Set_Active_Slot invalid slot '%s'\n", Slot.c_str());
+@@ -3302,19 +3349,9 @@ void TWPartitionManager::Set_Active_Slot(const string& Slot) {
+ 	LOGINFO("Setting active slot %s\n", Slot.c_str());
+ #ifdef AB_OTA_UPDATER
+ 	if (!Active_Slot_Display.empty()) {
+-		android::sp<IBootControl> module = IBootControl::getService();
+-		if (module == nullptr) {
+-			LOGERR("Error getting bootctrl module.\n");
+-		} else {
+-			uint32_t slot_number = 0;
+-			if (Slot == "B")
+-				slot_number = 1;
+-			CommandResult result;
+-			auto ret = module->setActiveBootSlot(slot_number, [&result]
+-					(const CommandResult &cb_result) { result = cb_result; });
+-			if (!ret.isOk() || !result.success)
+-				gui_msg(Msg(msg::kError, "unable_set_boot_slot=Error changing bootloader boot slot to {1}")(Slot));
+-		}
++		uint32_t slot_number = (Slot == "B") ? 1 : 0;
++		if (!TWRP_Set_Active_Slot_Misc(slot_number))
++			gui_msg(Msg(msg::kError, "unable_set_boot_slot=Error changing bootloader boot slot to {1}")(Slot));
+ 		DataManager::SetValue("tw_active_slot", Slot); // Doing this outside of this if block may result in a seg fault because the DataManager may not be ready yet
+ 	}
+ #else
+-- 
+2.54.0
+

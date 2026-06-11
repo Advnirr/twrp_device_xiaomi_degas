@@ -17,6 +17,7 @@
 !/screenshots/
 !/patch_touch_clean.sh
 !/xiaomi_touch_common_patched.ko
+!/patches/
 
 # tools/ is also an AOSP build dir — track only our own utility, nothing else.
 !/tools/

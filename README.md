@@ -80,13 +80,19 @@ tools/slot_switch.py        host utility: switch the active A/B slot by writing
 ## ⚙️ Building
 
 Use a minimal TWRP build environment, place this tree at `device/xiaomi/degas`,
-then:
+then apply the carried patches and build:
 
 ```bash
+./patches/apply_patches.sh        # run from the build top (where patches/ lives)
 . build/envsetup.sh
 lunch twrp_degas-eng
 mka vendorbootimage
 ```
+
+`patches/apply_patches.sh` applies the one small TWRP change this device needs —
+`bootable/recovery`'s `Set_Active_Slot` is patched to switch A/B slots by writing
+the `misc` `bootloader_control` struct directly (the stock boot‑HAL path hangs in
+standalone recovery). It is idempotent and safe to re‑run.
 
 This device is `TARGET_NO_KERNEL` (it ships a prebuilt kernel), so the build
 does not produce the vendor kernel modules. After the build, run the repack to
