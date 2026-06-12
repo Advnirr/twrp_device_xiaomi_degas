@@ -21,7 +21,10 @@
 # ============================================================================
 set -e
 
-WORKDIR="/home/mikhail/MyProjectsFolder/TWRP_Workspace"
+# Build top — defaults to the directory this script lives in (the repo is checked
+# out at the build top). Override with WORKDIR=/path/to/build/top if your layout
+# differs.
+WORKDIR="${WORKDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 MODBASE="$WORKDIR/twrp_degas-vendor_boot.img"          # base: modules + proven geometry
 FRESH="$WORKDIR/out/target/product/degas/vendor_boot.img"  # fresh build: TWRP ramdisk01
 OUTIMG="$WORKDIR/twrp_degas-vendor_boot-clean.img"
