@@ -33,6 +33,17 @@ jobs:
           sudo apt-get -qq clean
           df -h /
 
+      # Soong analysis needs more than the runner's 16 GB of RAM.
+      - name: Add swap
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile /swapfile
+          sudo fallocate -l 24G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
       - uses: actions/checkout@v4
         with:
           path: tree
