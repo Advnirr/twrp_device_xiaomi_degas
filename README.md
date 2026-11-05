@@ -13,7 +13,7 @@ Dimensity 8300-Ultra `mt6897`, HyperOS 3 / Android 16). The recovery lives in
 Beta. Flashing, raw partition backup/restore, wipe, ADB, sideload, MTP, OTG and
 A/B slot switching work.
 
-`/data` decryption is included since v1.1 but **not tested on a device yet**.
+`/data` decryption is on `main` but **not released and not tested on a device yet**.
 It uses the stock MiTEE stack (tee-supplicant, KeyMint 3.0, Gatekeeper, NXP
 Weaver) inside recovery. The method comes from
 [sigmapro555eshkere's OrangeFox tree](https://github.com/notnotshuts/ofox_device_xiaomi_degas),

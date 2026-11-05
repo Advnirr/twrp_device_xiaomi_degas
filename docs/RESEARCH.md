@@ -3,7 +3,7 @@
 Notes on how FBE decryption works in this recovery, why the first attempt
 failed, and why its conclusion was wrong.
 
-Status: the stack below is in the tree since v1.1. It comes from
+Status: the stack below is on `main` (not released yet). It comes from
 [sigmapro555eshkere's OrangeFox port](https://github.com/notnotshuts/ofox_device_xiaomi_degas),
 where decryption is reported working (OrangeFox, fox_16.0). This tree builds it
 on TWRP twrp-14.1 and has **not been tested on a device yet**.
