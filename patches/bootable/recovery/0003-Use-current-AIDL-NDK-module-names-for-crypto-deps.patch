@@ -1,0 +1,69 @@
+From 2c87c84e1376f4259e9638097877eaa488d8c9f8 Mon Sep 17 00:00:00 2001
+From: Advnirr <mikhail@advnirr.org>
+Date: Thu, 5 Nov 2026 23:32:46 +0300
+Subject: [PATCH] Use current AIDL NDK module names for crypto deps
+
+The -ndk_platform backend no longer exists on Android 14, so libtar and
+recovery fail to link with TW_INCLUDE_CRYPTO.
+---
+ Android.mk          | 6 +++---
+ libtar/Android.mk   | 8 ++++----
+ prebuilt/Android.mk | 1 +
+ 3 files changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index 78b9430..b94f983 100755
+--- a/Android.mk
++++ b/Android.mk
+@@ -334,14 +334,14 @@ ifeq ($(TW_INCLUDE_CRYPTO), true)
+     TW_INCLUDE_CRYPTO_FBE := true
+     LOCAL_CFLAGS += -DTW_INCLUDE_FBE
+     LOCAL_SHARED_LIBRARIES += android.frameworks.stats@1.0 android.hardware.authsecret@1.0 \
+-	android.security.authorization-ndk_platform \
++	android.security.authorization-ndk \
+         android.hardware.oemlock@1.0 libf2fs_sparseblock \
+         libandroidicu.recovery \
+         android.hardware.gatekeeper@1.0 \
+         android.hardware.weaver@1.0 \
+         android.frameworks.stats@1.0 \
+-        android.security.maintenance-ndk_platform \
+-        android.system.keystore2-V1-ndk_platform \
++        android.security.maintenance-ndk \
++        android.system.keystore2-V4-ndk \
+         libkeyutils \
+         liblog \
+         libsqlite.recovery \
+diff --git a/libtar/Android.mk b/libtar/Android.mk
+index c3bb691..199d044 100755
+--- a/libtar/Android.mk
++++ b/libtar/Android.mk
+@@ -23,10 +23,10 @@ ifeq ($(TW_INCLUDE_CRYPTO_FBE), true)
+         android.hardware.keymaster@4.0 \
+         android.hardware.keymaster@4.1 \
+         android.hardware.weaver@1.0 \
+-        android.security.apc-ndk_platform \
+-        android.system.keystore2-V1-ndk_platform \
+-        android.security.authorization-ndk_platform \
+-        android.security.maintenance-ndk_platform \
++        android.security.apc-ndk \
++        android.system.keystore2-V4-ndk \
++        android.security.authorization-ndk \
++        android.security.maintenance-ndk \
+         libselinux \
+         libbinder_ndk \
+         libext4_utils \
+diff --git a/prebuilt/Android.mk b/prebuilt/Android.mk
+index f3b7160..de6f375 100755
+--- a/prebuilt/Android.mk
++++ b/prebuilt/Android.mk
+@@ -191,6 +191,7 @@ ifeq ($(TW_INCLUDE_CRYPTO), true)
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/libtwrpfscrypt.so
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/android.security.maintenance-ndk.so
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/android.system.keystore2-V1-ndk.so
++        RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/android.system.keystore2-V4-ndk.so
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/android.security.apc-ndk.so
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/android.security.authorization-ndk.so
+         RECOVERY_LIBRARY_SOURCE_FILES += $(TARGET_OUT_SHARED_LIBRARIES)/libkeymint_support.so
+-- 
+2.56.0
+
