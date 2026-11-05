@@ -1,0 +1,109 @@
+name: Build TWRP
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Publish a pre-release with this tag (e.g. v1.1-beta). Empty = artifact only.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: twrp-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
+  MANIFEST_BRANCH: twrp-14.1
+  LUNCH: twrp_degas-ap2a-eng
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache \
+            /usr/local/share/boost /usr/share/swift /usr/local/.ghcup /usr/lib/jvm
+          sudo docker image prune -af || true
+          sudo apt-get -qq clean
+          df -h /
+
+      - uses: actions/checkout@v4
+        with:
+          path: tree
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y bc bison build-essential ccache cpio curl flex \
+            g++-multilib gcc-multilib git git-lfs gnupg gperf lib32ncurses-dev \
+            lib32z1-dev libelf-dev liblz4-tool libncurses5 libssl-dev libxml2-utils \
+            lz4 python3 python-is-python3 rsync squashfs-tools unzip xsltproc zip zlib1g-dev
+          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod 0755 /usr/local/bin/repo
+          git config --global user.name ci
+          git config --global user.email ci@localhost
+
+      - name: Sync TWRP source
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/src" && cd "$GITHUB_WORKSPACE/src"
+          repo init --depth=1 --no-repo-verify -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH" -g default,-mips,-darwin,-notdefault
+          repo sync -c -j"$(nproc --all)" --force-sync --no-clone-bundle --no-tags --optimized-fetch --prune
+          df -h /
+
+      - name: Add device tree and apply patches
+        run: |
+          cd "$GITHUB_WORKSPACE/src"
+          mkdir -p device/xiaomi
+          rsync -a "$GITHUB_WORKSPACE/tree/device/xiaomi/degas" device/xiaomi/
+          rsync -a "$GITHUB_WORKSPACE/tree/patches" .
+          bash patches/apply_patches.sh 2>&1 | tee patches.log
+          ! grep -q '^FAIL' patches.log
+
+      - name: Build vendor_boot
+        run: |
+          cd "$GITHUB_WORKSPACE/src"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          source build/envsetup.sh
+          lunch "$LUNCH"
+          mka vendorbootimage -j"$(nproc --all)"
+
+      - name: Collect image
+        id: img
+        run: |
+          cd "$GITHUB_WORKSPACE/src"
+          img=out/target/product/degas/vendor_boot.img
+          size=$(stat -c%s "$img")
+          echo "vendor_boot.img: $size bytes (partition: 67108864)"
+          [ "$size" -le 67108864 ] || { echo "image does not fit the 64 MiB vendor_boot" >&2; exit 1; }
+          tag="${{ inputs.release_tag }}"
+          name="twrp-3.7.1_14-Advnirr-degas-${tag:-ci${{ github.run_number }}}-vendor_boot.img"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$img" "$GITHUB_WORKSPACE/dist/$name"
+          cd "$GITHUB_WORKSPACE/dist" && sha256sum "$name" > SHA256SUMS && cat SHA256SUMS
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twrp-degas-${{ github.run_number }}
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Publish pre-release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$GITHUB_WORKSPACE/tree"
+          notes=".github/release-notes/${{ inputs.release_tag }}.md"
+          [ -f "$notes" ] || notes=/dev/null
+          gh release create "${{ inputs.release_tag }}" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "TWRP 3.7.1 for Xiaomi 14T (degas) — ${{ inputs.release_tag }}" \
+            --notes-file "$notes" \
+            "$GITHUB_WORKSPACE/dist/${{ steps.img.outputs.name }}" "$GITHUB_WORKSPACE/dist/SHA256SUMS"

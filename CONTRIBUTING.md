@@ -25,13 +25,11 @@ When filing a bug or build issue, include:
 - Match the surrounding style of the file you're editing.
 - Note what you tested (which device, which TWRP function).
 
-## FBE decryption research
+## FBE decryption
 
-`/data` decryption is not achievable from recovery on this device (the metadata
-key is bound to the TEE Root‑of‑Trust). The full investigation — including the
-`LD_PRELOAD` shim approach used to bring the keystore stack up by hand inside
-recovery — lives in the [`fbe-decryption-research`](../../tree/fbe-decryption-research)
-branch, not on `main`.
+Decryption notes, including why the first attempt failed, are in
+[docs/RESEARCH.md](docs/RESEARCH.md). If you test decryption, say which
+firmware you are on and attach `/tmp/recovery.log` and `logcat`.
 
 ## License
 

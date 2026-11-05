@@ -1,0 +1,23 @@
+// Native OMAPI service for the recovery (see se_omapi_recovery.cpp).
+// Built as a vendor binary and copied into the recovery ramdisk via
+// TW_RECOVERY_ADDITIONAL_RELINK_VENDOR_HW_BINARY_FILES (BoardConfig.mk).
+// At runtime it uses the stock vendor android.se.omapi-V1-ndk and
+// android.hardware.secure_element-V1-ndk shipped in recovery/root/vendor/lib64
+// (same frozen V1 interfaces).
+cc_binary {
+    name: "se_omapi_recovery",
+    vendor: true,
+    relative_install_path: "hw",
+    srcs: ["se_omapi_recovery.cpp"],
+    shared_libs: [
+        "libbase",
+        "liblog",
+        "libbinder_ndk",
+        "android.se.omapi-V1-ndk",
+        "android.hardware.secure_element-V1-ndk",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}

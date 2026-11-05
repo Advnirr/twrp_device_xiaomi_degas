@@ -16,18 +16,22 @@ odm_dlkm     /odm_dlkm     ext4   ro  wait,slotselect,logical,first_stage_mount
 system_dlkm  /system_dlkm  erofs  ro  wait,slotselect,logical,first_stage_mount
 system_dlkm  /system_dlkm  ext4   ro  wait,slotselect,logical,first_stage_mount
 
-# userdata — FBE, cannot be decrypted from recovery on this device (TEE RoT-bound).
-# Kept mountable=false in practice; present for Format Data / Wipe and raw image backup.
-/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,gc_merge,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,atgc,age_extent_cache,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci;flags=display="Data (encrypted)";backup=0;wipeingui;canbewiped
+# userdata — FBE v2 + metadata encryption (keydirectory on /metadata), as stock fstab.mt6897.
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,gc_merge,discard,noflush_merge,fsync_mode=nobarrier,reserve_root=134217,resgid=1065,atgc,age_extent_cache,inlinecrypt wait,check,formattable,quota,latemount,resize,reservedsize=128m,checkpoint=fs,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,fsverity,sysfs_path=/sys/devices/platform/soc/112b0000.ufshci
 
-# metadata — f2fs
-/dev/block/by-name/metadata /metadata f2fs noatime,nosuid,nodev,discard wait,check,formattable,first_stage_mount
+# metadata — f2fs. READ-ONLY while FBE decryption is being brought up: it holds
+# the vold metadata key; a KeyMint "upgrade" or any write must never happen here.
+# No `formattable`/`check`: a failed mount must never lead to a format/repair.
+# TWRP flags (display/backup/canbewiped) are in /system/etc/twrp.flags.
+/dev/block/by-name/metadata /metadata f2fs ro,noatime,nosuid,nodev wait,first_stage_mount
 
 # cache
 /dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,noauto_da_alloc,discard wait,check,formattable;flags=display="Cache"
 
-# persist
-/dev/block/by-name/persist /mnt/vendor/persist ext4 noatime,nosuid,nodev,noauto_da_alloc,commit=1,nodelalloc wait,check,formattable;flags=display="Persist"
+# persist — mounted rw by init at /mnt/vendor/persist for the TEE (see
+# init.recovery.mt6897.rc). TWRP gets a separate read-only mount point for
+# backups so it never unmounts/remounts the TEE store. Never wiped/formatted.
+/dev/block/by-name/persist /mnt/vendor/persist_bak ext4 ro,noatime,nosuid,nodev wait
 
 # misc
 /dev/block/by-name/misc /misc emmc defaults defaults

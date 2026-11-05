@@ -6,6 +6,24 @@ on early-init
 on boot
     write /sys/class/touch/touch_dev/enable_touch_raw 0
     write /sys/class/touch/touch_dev/panel_display "U"
+    start degas_sbin_getprop
+
+# AnyKernel3 (and other zips using its update-binary) bind the ROM's /system
+# over ours and mount APEXes with `-t ext4` only; ColorOS/HyperOS APEXes are
+# erofs, so the ROM's /system/bin/getprop (linker in com.android.runtime)
+# cannot run. anykernel.sh runs as a child `ash`, so update-binary's getprop
+# fallback function is not inherited; the /proc/cmdline fallback finds no slot
+# (degas passes androidboot.slot_suffix only via /proc/bootconfig) -> AK3 looks
+# for by-name/boot -> "Unable to determine boot partition. Aborting...".
+# Recovery PATH is /sbin:/system/bin and /sbin is not covered by the bind, so
+# hard-link our static toolbox_ramdisk there as getprop (same rootfs, no extra
+# space). A symlink would not do: it would resolve into the ROM's /system.
+service degas_sbin_getprop /system/bin/sh -c "[ -e /sbin/getprop ] || ln /system/bin/toolbox_ramdisk /sbin/getprop"
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
 
 # USB: force the ConfigFS gadget. TWRP's init.rc hardcodes sys.usb.configfs=0,
 # which drives the legacy /sys/class/android_usb path — that node does not exist
@@ -34,3 +52,142 @@ on property:sys.usb.config=mtp,adb && property:sys.usb.ffs.ready=1 && property:s
     symlink /config/usb_gadget/g1/functions/ffs.adb /config/usb_gadget/g1/configs/b.1/f2
     write /config/usb_gadget/g1/UDC ${sys.usb.controller}
     setprop sys.usb.state ${sys.usb.config}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FBE decryption: stock HyperOS 306 MiTEE stack (tee-supplicant, KeyMint 3.0,
+# Gatekeeper) — method proven on duchamp (same SoC/TEE), adapted to degas.
+#
+# degas difference: the TEE REE-FS store (dirf.db + objects, incl. KeyMint's
+# SecureDeletionSecrets) lives in /mnt/vendor/persist/data (tee-supplicant
+# strings + on-device listing). protect1/2 only hold modem files, so only
+# persist is mounted. It must be mounted rw, as in stock: the TA may write.
+# ═══════════════════════════════════════════════════════════════════════════
+
+on fs
+    mkdir /mnt/vendor 0755 root root
+    mkdir /mnt/vendor/persist 0771 root system
+    # stock fstab.mt6897 options; no fsck, never formatted from here
+    mount ext4 /dev/block/by-name/persist /mnt/vendor/persist wait noatime nosuid nodev noauto_da_alloc,commit=1,nodelalloc
+    restorecon_recursive /mnt/vendor/persist
+    mkdir /mnt/vendor/persist/data 0755 system system
+    mkdir /mnt/vendor/persist/fdsd 0755 system system
+
+    # device nodes, as stock tee-supplicant.rc (recovery leaves them root 0600)
+    chmod 0660 /dev/tee0
+    chmod 0660 /dev/teepriv0
+    chown system system /dev/tee0
+    chown system system /dev/teepriv0
+    chmod 0660 /dev/rpmb0
+    chown system system /dev/rpmb0
+    chmod 0660 /dev/0:0:0:49476
+    chown system system /dev/0:0:0:49476
+    chmod 0660 /dev/ufs-bsg0
+    chown system system /dev/ufs-bsg0
+
+    setprop vendor.teefs_state ready
+    setprop ro.hardware.gatekeeper mitee
+
+# Vendor binaries must resolve their own copies first: some stock libs share a
+# name with the OFRP-built ones (e.g. lib_android_keymaster_keymint_utils.so).
+service tee-supplicant /vendor/bin/tee-supplicant
+    user system
+    group system secure_element nfc
+    capabilities SYS_RAWIO
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+service vendor.keymint-mitee /vendor/bin/hw/android.hardware.security.keymint@3.0-service.mitee
+    user system
+    group system drmrpc
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-service.mitee
+    user system
+    group system
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+# Gatekeeper must come up after KeyMint (duchamp: HAT signature race, -26)
+service delayed_gatekeeper /system/bin/sh -c "sleep 1; start vendor.gatekeeper_mitee"
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+
+# Sets KeyMint's OS version / patch levels from the device build.props, then
+# crypto.ready=1. Fail-closed (see the script).
+service degas_prepdecrypt /system/bin/sh /system/bin/degas_prepdecrypt.sh
+    user root
+    group root
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+
+on property:ro.crypto.state=encrypted
+    start degas_prepdecrypt
+
+# ── Weaver (synthetic-password CE keys) ─────────────────────────────────────
+# Stock chain: weaver-service.nxp -> ese_weaver.nxp.so -> OMAPI -> eSE HAL
+# (ISecureElement/eSE1, MiTEE TA 2e8fade5-...). In Android OMAPI is the Java
+# SecureElement app; here it is se_omapi_recovery (device/.../omapi).
+service vendor.secure_element_hal_service /vendor/bin/hw/vendor.xiaomi.hardware.secure_element-service
+    user system
+    group system secure_element nfc
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+service se_omapi_recovery /vendor/bin/hw/se_omapi_recovery
+    user system
+    group system
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+service vendor.weaver_nxp /vendor/bin/hw/android.hardware.weaver-service.nxp
+    user 2902
+    group system drmrpc
+    capabilities WAKE_ALARM
+    setenv LD_LIBRARY_PATH /vendor/lib64:/system/lib64
+    seclabel u:r:recovery:s0
+    disabled
+
+on property:crypto.ready=1 && property:vendor.teefs_state=ready
+    start tee-supplicant
+    start vendor.keymint-mitee
+    start delayed_gatekeeper
+    # eSE power/SPI driver (stock 306 vendor_dlkm; Android loads it from there,
+    # recovery only has the vendor_boot modules). Without /dev/p73 the eSE HAL
+    # fails: "open dev p73 failed", "power on eSE, chip type no support".
+    # p73 depends on spi-mt65xx (vendor_boot) and nxp_i2c.
+    insmod /vendor/lib/modules/nxp_i2c.ko
+    insmod /vendor/lib/modules/p73.ko
+    wait /dev/p73 3
+    chown nfc nfc /dev/nq-nci
+    chmod 0660 /dev/nq-nci
+    chown nfc nfc /dev/p73
+    chmod 0660 /dev/p73
+    start vendor.secure_element_hal_service
+    start se_omapi_recovery
+    start vendor.weaver_nxp
+
+on property:ro.crypto.state=unsupported
+    stop vendor.weaver_nxp
+    stop se_omapi_recovery
+    stop vendor.secure_element_hal_service
+    stop vendor.gatekeeper_mitee
+    stop vendor.keymint-mitee
+    stop tee-supplicant
+
+on property:twrp.all.users.decrypted=true
+    stop vendor.weaver_nxp
+    stop se_omapi_recovery
+    stop vendor.secure_element_hal_service
+    stop vendor.gatekeeper_mitee
+    stop vendor.keymint-mitee
+    stop tee-supplicant

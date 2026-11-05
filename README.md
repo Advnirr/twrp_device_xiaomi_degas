@@ -1,127 +1,108 @@
-# TWRP Device Tree for Xiaomi 14T (`degas`)
+# TWRP device tree for Xiaomi 14T (`degas`)
 
 ![Status: Beta](https://img.shields.io/badge/Status-Beta-yellow.svg)
 ![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)
 ![Platform: MT6897](https://img.shields.io/badge/Platform-MT6897-green.svg)
 
-Unofficial TWRP (Team Win Recovery Project) device tree for the **Xiaomi 14T**
-(code‑named **`degas`**, MediaTek Dimensity 8300‑Ultra `mt6897`, HyperOS 3 /
-Android 16).
+Unofficial TWRP 3.7.1 (twrp-14.1) for the Xiaomi 14T (`degas`, MediaTek
+Dimensity 8300-Ultra `mt6897`, HyperOS 3 / Android 16). The recovery lives in
+`vendor_boot`.
 
-## 📌 Status: Beta
+## Status
 
-The recovery boots and is usable for day‑to‑day work: flashing, partition
-backup/restore, wiping, and file transfer all work over a clean USB stack.
+Beta. Flashing, raw partition backup/restore, wipe, ADB, sideload, MTP, OTG and
+A/B slot switching work.
 
-The one thing this recovery **cannot** do is decrypt `/data`. The device uses
-File‑Based Encryption with metadata encryption (`dm-default-key`), and the
-metadata key is bound to the TEE **Root‑of‑Trust**, which is different when a
-custom recovery image is booted — so the key cannot be unwrapped from recovery.
-This is a hardware/TEE limitation, not a missing feature. The full investigation
-that established this is preserved in the
-[`fbe-decryption-research`](../../tree/fbe-decryption-research) branch.
+`/data` decryption is included since v1.1 but **not tested on a device yet**.
+It uses the stock MiTEE stack (tee-supplicant, KeyMint 3.0, Gatekeeper, NXP
+Weaver) inside recovery. The method comes from
+[sigmapro555eshkere's OrangeFox tree](https://github.com/notnotshuts/ofox_device_xiaomi_degas),
+which reports working decryption. Why the v1.0 conclusion ("impossible, Root of
+Trust") was wrong and how the stack works is in
+[docs/RESEARCH.md](docs/RESEARCH.md).
 
-## 🔩 Device
+The bundled kernel modules and TEE blobs are from HyperOS
+`OS3.0.306.0.WNEEUXM`. On other firmware the modules may not match your kernel.
+
+## Device
 
 | | |
 |---|---|
 | Model | Xiaomi 14T |
 | Codename | `degas` |
-| SoC | MediaTek Dimensity 8300‑Ultra (`mt6897`) |
-| Architecture | arm64 (Cortex‑A715 + Cortex‑A510) |
-| OS | HyperOS 3 (Android 16) |
-| Partitions | A/B, dynamic (super), `vendor_boot` GKI v4 |
-| Userdata FS | F2FS, FBE `aes-256-xts` + metadata encryption (`dm-default-key`) |
+| SoC | MediaTek Dimensity 8300-Ultra (`mt6897`) |
+| Partitions | A/B, virtual A/B, dynamic (super), `vendor_boot` GKI v4 |
+| Userdata | F2FS, FBE v2 `aes-256-xts` + metadata encryption (`dm-default-key`) |
 | Touch | Goodix (firmware + patched `xiaomi_touch_common.ko`) |
 
-## 🛠️ Features & Hardware Support
-
-* [x] **Core boot** — GKI v4 `vendor_boot`, prebuilt kernel/DTB.
-* [x] **Display & GUI** — TWRP interface renders correctly.
-* [x] **Touchscreen** — Goodix firmware + patched `xiaomi_touch_common.ko`.
-* [x] **Partition mounting** — `xiaomi_dynamic_partitions` (super), `erofs` + `ext4` fallback.
-* [x] **Backup** — raw image backup of `boot` / `init_boot` / `vendor_boot` / `dtbo` / `super` / `vbmeta*`.
-* [x] **Restore**
-* [x] **Wipe / Format Data**
-* [x] **ADB** and **ADB sideload**
-* [x] **MTP** — browse recovery storage over USB.
-* [x] **USB‑OTG**
-* [x] **A/B slot switching** — direct `misc` `bootloader_control` write (the stock boot‑HAL path hangs in standalone recovery).
-* [x] **Other** (battery indicator)
-* [ ] **FBE `/data` decryption** — not achievable from recovery (TEE Root‑of‑Trust binding; see the [`fbe-decryption-research`](../../tree/fbe-decryption-research) branch).
-
-## 📂 Repository layout
+## Layout
 
 ```
-device/xiaomi/degas/        TWRP device tree (the part you build)
-  BoardConfig.mk            board / partition / battery / USB / AVB config
-  device.mk                 product packages
-  twrp_degas.mk             product definition (lunch target twrp_degas-eng)
-  recovery.fstab            recovery fstab (logical partitions + backup entries)
-  prebuilt/                 prebuilt boot.img, dtbo.img and dtb (build inputs)
-  recovery/root/            files baked into the recovery ramdisk
-                            (init.recovery.mt6897.rc: touch + USB ConfigFS + MTP,
-                             Goodix firmware)
-  sepolicy/                 device sepolicy
-
-patch_touch_clean.sh        post-build repack: grafts the 215 vendor kernel
-                            modules (+ patched Goodix touch driver) into the
-                            freshly built vendor_boot
-xiaomi_touch_common_patched.ko
-tools/slot_switch.py        host utility: switch the active A/B slot by writing
-                            the misc bootloader_control struct directly
+device/xiaomi/degas/
+  BoardConfig.mk, device.mk, twrp_degas.mk
+  prebuilt/                 stock boot.img, dtbo.img, dtb
+  vendor_ramdisk/           stock 306 kernel modules + first-stage fstab
+  recovery/root/            recovery ramdisk: init.recovery.mt6897.rc, fstab,
+                            Goodix firmware, MiTEE/Weaver/eSE blobs, prepdecrypt
+  recovery/tee-blobs.sha256 checksums of the bundled TEE/eSE binaries
+  omapi/                    native OMAPI service for the Weaver HAL
+  sepolicy/
+patches/                    patches for bootable/recovery (A/B slot switch, splash)
+tools/slot_switch.py        host tool: switch A/B slot via misc bootloader_control
+docs/RESEARCH.md            decryption notes
 ```
 
-> This tree is meant to be checked out inside a minimal TWRP build manifest. The
-> `.gitignore` is a whitelist: it ignores the surrounding AOSP/TWRP tree and
-> tracks only the files listed above. Built recovery images are not committed —
-> rebuild from source or use Releases.
+The repo is meant to be checked out at the top of a TWRP build tree; the
+`.gitignore` is a whitelist.
 
-## ⚙️ Building
+## Building
 
-Use a minimal TWRP build environment, place this tree at `device/xiaomi/degas`,
-then apply the carried patches and build:
+GitHub Actions: **Actions → Build TWRP → Run workflow**. It syncs twrp-14.1,
+applies `patches/`, builds and uploads `vendor_boot.img`. With `release_tag`
+set it also publishes a pre-release.
+
+Locally:
 
 ```bash
-./patches/apply_patches.sh        # run from the build top (where patches/ lives)
+repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-14.1
+repo sync -c
+# put this repo's device/ and patches/ at the build top
+./patches/apply_patches.sh
 . build/envsetup.sh
-lunch twrp_degas-eng
+lunch twrp_degas-ap2a-eng
 mka vendorbootimage
 ```
 
-`patches/apply_patches.sh` applies the one small TWRP change this device needs —
-`bootable/recovery`'s `Set_Active_Slot` is patched to switch A/B slots by writing
-the `misc` `bootloader_control` struct directly (the stock boot‑HAL path hangs in
-standalone recovery). It is idempotent and safe to re‑run.
+The output `out/target/product/degas/vendor_boot.img` is flashable as is: the
+stock modules are built into the vendor ramdisk, so the old repack script is
+gone.
 
-This device is `TARGET_NO_KERNEL` (it ships a prebuilt kernel), so the build
-does not produce the vendor kernel modules. After the build, run the repack to
-graft the stock modules (with the patched touch driver) into `vendor_boot`:
+## Flashing
+
+Unlocked bootloader required. Back up `vendor_boot_a`/`vendor_boot_b`,
+`metadata`, `persist` and your data first.
 
 ```bash
-./patch_touch_clean.sh        # produces twrp_degas-vendor_boot-clean.img
-fastboot flash vendor_boot twrp_degas-vendor_boot-clean.img
+fastboot getvar current-slot
+fastboot flash vendor_boot_<slot> twrp-...-vendor_boot.img
+fastboot reboot recovery
 ```
 
-(Adjust the `WORKDIR`/input paths at the top of the script if your layout
-differs. `init.recovery.mt6897.rc` and the Goodix firmware are baked into the
-device tree; only the kernel modules are grafted by the repack.)
+Do not relock the bootloader with a custom `vendor_boot`.
 
-## 📸 Screenshots
+## Credits
 
-<details>
-<summary><b>Click to view</b></summary>
+- [sigmapro555eshkere](https://github.com/notnotshuts/ofox_device_xiaomi_degas):
+  OrangeFox port of this tree with working decryption. The decryption stack,
+  stock 306 modules, eSE/Weaver bring-up and native OMAPI service are taken
+  from it.
+- [Dip184](https://github.com/Dip184/android_device_xiaomi_duchamp/tree/orangefox-14.1):
+  the MiTEE decryption method on duchamp that the port is based on.
 
-![TWRP Main Screen](screenshots/1.png)
-![TWRP Partitions / Terminal](screenshots/2.png)
+## License
 
-</details>
-
-## ⚖️ License
-
-Licensed under the Apache License 2.0 — see the [LICENSE](LICENSE) file.
-Recovery/device‑tree pieces inherited from TWRP follow their upstream licenses
-(GPL); the AOSP makefiles are Apache‑2.0.
+Apache License 2.0, see [LICENSE](LICENSE). Parts inherited from TWRP and AOSP
+keep their upstream licenses. Stock vendor binaries belong to their owners.
 
 ---
 *Maintained by Advnirr | [advnirr.org](https://advnirr.org)*

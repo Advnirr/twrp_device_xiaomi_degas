@@ -15,8 +15,7 @@
 !/CONTRIBUTING.md
 !/.github/
 !/screenshots/
-!/patch_touch_clean.sh
-!/xiaomi_touch_common_patched.ko
+!/docs/
 !/patches/
 
 # tools/ is also an AOSP build dir — track only our own utility, nothing else.
@@ -36,4 +35,5 @@
 # --- Local-only working files / build artifacts ------------------------------
 # Built recovery images belong in GitHub Releases, not in git history.
 /twrp_degas-vendor_boot*.img
+/twrp-*.img
 *.log

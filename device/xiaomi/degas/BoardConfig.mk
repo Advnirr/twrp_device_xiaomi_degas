@@ -1,5 +1,9 @@
 DEVICE_PATH := device/xiaomi/degas
 
+# Stock kernel modules (.ko, ELF) are shipped via PRODUCT_COPY_FILES into the
+# vendor ramdisk (see device.mk) — this is a TARGET_NO_KERNEL build.
+BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+
 # Arch
 TARGET_ARCH := arm64
 TARGET_ARCH_VARIANT := armv8-a
@@ -25,6 +29,15 @@ TARGET_BOOTLOADER_BOARD_NAME := degas
 BOARD_BOOT_HEADER_VERSION := 4
 BOARD_VENDOR_BOOT_HEADER_VERSION := 4
 BOARD_MKBOOTIMG_ARGS += --header_version 4 --dtb $(TARGET_PREBUILT_DTB)
+# The vendor_boot rule passes only --base/--pagesize; the BOARD_*_OFFSET vars
+# below are NOT used for vendor_boot, so pass them explicitly. Without this the
+# header gets mkbootimg defaults (kernel 0x8000, ramdisk 0x1000000, tags 0x100,
+# dtb 0x1f00000) and the device dies before the screen comes on. Values = stock
+# vendor_boot (kernel 0x40000000, ramdisk 0x66f00000, tags/dtb 0x47c80000).
+BOARD_MKBOOTIMG_ARGS += --kernel_offset $(BOARD_KERNEL_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --ramdisk_offset $(BOARD_RAMDISK_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --tags_offset $(BOARD_TAGS_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --dtb_offset $(BOARD_DTB_OFFSET)
 BOARD_KERNEL_PAGESIZE := 4096
 BOARD_RAMDISK_USE_LZ4 := true
 BOARD_KERNEL_BASE        := 0x00000000
@@ -35,10 +48,12 @@ BOARD_DTB_OFFSET         := 0x47c80000
 TARGET_NO_KERNEL := true
 BOARD_KERNEL_IMAGE_NAME := Image
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb/degas.dtb
-TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery.fstab
+TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
 
 # CMDLINE
-BOARD_KERNEL_CMDLINE := console=tty0 root=/dev/ram nosoftlockup transparent_hugepage=never kasan.page_alloc.sample=1 disable_dma32=on swiotlb=noforce bootopt=64S3,32N2,64N2 androidboot.selinux=permissive printk.disable_uart=0
+# Vendor cmdline exactly as in the stock vendor_boot (and the working Advnirr
+# image, which reused the stock header). Kernel cmdline itself comes from boot.
+BOARD_KERNEL_CMDLINE := bootopt=64S3,32N2,64N2
 
 # ========================================================
 # RECOVERY GKI v4 (vendor_boot)
@@ -47,14 +62,9 @@ BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
 BOARD_USES_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 
-# NOTE: the 215 vendor kernel modules (touch/display/UFS) can't be packed
-# natively here — this is a TARGET_NO_KERNEL build, and a prebuilt vendor_boot
-# ramdisk fragment (DLKM *or* PLATFORM type) is not pulled into the recovery
-# first-stage initramfs, so the modules never load (black screen / bootloop).
-# They are grafted in by patch_touch_clean.sh, which combines the stock module
-# ramdisk (+ patched touch .ko) with the freshly built TWRP ramdisk. The init.rc
-# and Goodix firmware ARE baked natively (device/.../recovery/root/), so the
-# repack only has to deal with the modules.
+# Stock kernel modules go into the main vendor ramdisk via PRODUCT_COPY_FILES
+# (device.mk, vendor_ramdisk/). A prebuilt vendor_boot ramdisk fragment does not
+# work here: first-stage init never loads modules from it.
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 104857600
 # vendor_boot partition is 64 MB on degas — needed so AVB add_hash_footer gets a
 # size (build was failing at the footer step with an empty --partition_size).
@@ -74,7 +84,7 @@ TARGET_COPY_OUT_VENDOR := vendor
 
 # TWRP Settings
 TW_THEME := portrait_hdpi
-# Maintainer tag shown next to the version (e.g. "3.7.1_12-Advnirr").
+# Maintainer tag shown next to the version (e.g. "3.7.1_14-Advnirr").
 TW_DEVICE_VERSION := Advnirr
 RECOVERY_SDCARD_ON_DATA := true
 TARGET_RECOVERY_PIXEL_FORMAT := BGRA_8888
@@ -92,7 +102,7 @@ TW_INPUT_BLACKLIST := "hbtp_vm"
 # updates after a manual restart. Legacy mode reads the gauge node directly.
 # USB: MTP enabled. The matching ConfigFS support (ffs.mtp function + mount +
 # the `on property:sys.usb.config=mtp,adb ... configfs=1` bind trigger) is added
-# via init.recovery.mt6897.rc (injected by patch_touch_clean.sh). Without it,
+# via init.recovery.mt6897.rc. Without it,
 # enabling MTP would unbind the gadget UDC and never rebind -> all USB dies.
 
 TW_USE_LEGACY_BATTERY_SERVICES := true
@@ -107,12 +117,30 @@ TW_CUSTOM_BATTERY_PATH := /sys/class/power_supply/battery
 BOARD_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
 
 # ── Encryption ────────────────────────────────────────
-# FBE decrypt is not achievable from recovery on this device (TEE Root-of-Trust
-# binding — see docs/RESEARCH.md), so the crypto stack is intentionally NOT
-# included. It pulled in ~11 MB of keymaster/keymint/gatekeeper/vold libs that
-# would push the combined vendor_boot over the 64 MB partition. /data is shown
-# as encrypted/unmountable; Format Data still works.
-# TW_INCLUDE_CRYPTO / TW_INCLUDE_CRYPTO_FBE / TW_INCLUDE_METADATA_DECRYPT — removed.
+# FBE v2 + metadata encryption (dm-default-key), KeyMint 3.0 / Gatekeeper in
+# MiTEE: stock 306 blobs + init in recovery/root (see init.recovery.mt6897.rc).
+TW_INCLUDE_CRYPTO := true
+TW_INCLUDE_CRYPTO_FBE := true
+TW_INCLUDE_FBE_METADATA_DECRYPT := true
+BOARD_USES_METADATA_PARTITION := true
+TW_USE_FSCRYPT_POLICY := 2
+# logd + logcat: with TW_INCLUDE_CRYPTO the recovery binary and libtar link
+# libsysutils, which recovery only installs together with logd. Without it the
+# recovery service fails to link ("libsysutils.so not found") and the device
+# sits on the boot logo. logcat is also needed: keystore2 logs only to logd.
+TWRP_INCLUDE_LOGCAT := true
+TARGET_USES_LOGD := true
+# Native OMAPI service for the Weaver HAL (device/xiaomi/degas/omapi): built as
+# a vendor binary, copied into the recovery ramdisk's /vendor/bin/hw.
+TW_RECOVERY_ADDITIONAL_RELINK_VENDOR_HW_BINARY_FILES += $(TARGET_OUT_VENDOR_EXECUTABLES)/hw/se_omapi_recovery
+# Use only recovery.fstab. Otherwise TWRP re-parses the vendor fstab
+# (/etc/additional.fstab) and its stock /metadata options replace ours, so
+# /metadata got mounted rw although recovery.fstab says ro.
+TW_SKIP_ADDITIONAL_FSTAB := true
+# PLATFORM_SECURITY_PATCH := 2099-12-31 is deliberately NOT used: KeyMint's
+# OS version / patch levels are set at runtime from the device build.props by
+# degas_prepdecrypt.sh. A recovery patch level above Android's would make
+# KeyMint request a key *upgrade* and vold would rewrite the key blob.
 
 # ── AVB ───────────────────────────────────────────────
 BOARD_AVB_ENABLE                          := true

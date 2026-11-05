@@ -1,0 +1,4 @@
+<!-- Minimal framework manifest for the recovery: servicemanager needs a base
+     manifest to read the fragments in manifest/ (keystore2 etc.). -->
+<manifest version="1.0" type="framework">
+</manifest>

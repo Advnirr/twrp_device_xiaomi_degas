@@ -1,0 +1,5 @@
+# TWRP v1-format flags for entries of recovery.fstab (v2). In a v2 fstab TWRP
+# splits the fs_mgr flag column on ',' only, so ';flags=...' there is ignored.
+#<mnt_point>              <type>  <device>                       <flags>
+/metadata                 f2fs    /dev/block/by-name/metadata    flags=display="Metadata";backup=1;canbewiped=0
+/mnt/vendor/persist_bak   ext4    /dev/block/by-name/persist     flags=display="Persist";backup=1;canbewiped=0

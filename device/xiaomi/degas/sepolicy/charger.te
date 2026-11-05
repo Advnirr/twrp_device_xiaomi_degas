@@ -1,0 +1,8 @@
+# The A16 recovery `charger` (critical service in recovery init.rc) is killed
+# with SIGSEGV on `avc: denied { execmem }` (domain charger is enforcing, unlike
+# recovery/init/ueventd in system/sepolicy/private/twrp.te). After 4 crashes
+# init reboots to the bootloader ~20 s after OrangeFox starts.
+# Only the recovery sepolicy is built from this tree.
+recovery_only(`
+  permissive charger;
+')
