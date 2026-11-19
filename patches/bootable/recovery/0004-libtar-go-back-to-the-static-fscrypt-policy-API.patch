@@ -1,0 +1,284 @@
+From 7524b671a813703e2381e2232372aa9c5c8c4fba Mon Sep 17 00:00:00 2001
+From: Advnirr <mikhail@advnirr.org>
+Date: Thu, 19 Nov 2026 21:51:44 +0300
+Subject: [PATCH] libtar: go back to the static fscrypt policy API
+
+TWRP's android-14.1 vold ships fscrypt_policy.h with the per-build
+v1/v2 functions, not the union/get_policy_size() helpers that
+"libtar: dynamically choose fscrypt policy [1/2]" (97b849918c) expects.
+The matching vold half only exists on android-12.1, so libtar fails to
+build with TW_INCLUDE_CRYPTO. Revert the libtar side of that change.
+---
+ libtar/append.c  | 45 +++++++++++++++++++---------------
+ libtar/block.c   | 63 ++++++++++++++++++++++++++++++++++++------------
+ libtar/extract.c | 44 +++++++++++++++++++++++----------
+ libtar/libtar.h  |  6 ++++-
+ libtar/output.c  |  8 +++++-
+ 5 files changed, 116 insertions(+), 50 deletions(-)
+
+diff --git a/libtar/append.c b/libtar/append.c
+index 225ae1ad..c4f1794f 100755
+--- a/libtar/append.c
++++ b/libtar/append.c
+@@ -143,34 +143,41 @@ tar_append_file(TAR *t, const char *realname, const char *savename)
+ 			free(t->th_buf.fep);
+ 			t->th_buf.fep = NULL;
+ 		}
+-		t->th_buf.fep = (fscrypt_policy *)malloc(sizeof(fscrypt_policy));
++#ifdef USE_FSCRYPT_POLICY_V1
++		t->th_buf.fep = (struct fscrypt_policy_v1 *)malloc(sizeof(struct fscrypt_policy_v1));
++#else
++		t->th_buf.fep = (struct fscrypt_policy_v2 *)malloc(sizeof(struct fscrypt_policy_v2));
++#endif
+ 		if (!t->th_buf.fep) {
+ 			LOG("malloc fs_encryption_policy\n");
+ 			return -1;
+ 		}
+ 
+ 		if (fscrypt_policy_get_struct(realname, t->th_buf.fep)) {
+-			uint8_t size, hex_size, *descriptor;
+-			size = get_policy_size(t->th_buf.fep, false);
+-			hex_size = get_policy_size(t->th_buf.fep, true);
+-			descriptor = get_policy_descriptor(t->th_buf.fep);
+-			char user_ce[4], user_de[4], system_de[4];
+-			sprintf(user_ce,"%u%s", t->th_buf.fep->version, USER_CE_FSCRYPT_POLICY);
+-			sprintf(user_de,"%u%s", t->th_buf.fep->version, USER_DE_FSCRYPT_POLICY);
+-			sprintf(system_de,"%u%s", t->th_buf.fep->version, SYSTEM_DE_FSCRYPT_POLICY);
+-#ifdef DEBUG
+-			LOG("version: %u\n", t->th_buf.fep->version);
++#ifdef USE_FSCRYPT_POLICY_V1
++			uint8_t tar_policy[FS_KEY_DESCRIPTOR_SIZE];
++			char policy_hex[FS_KEY_DESCRIPTOR_SIZE_HEX];
++#else
++			uint8_t tar_policy[FSCRYPT_KEY_IDENTIFIER_SIZE];
++			char policy_hex[FSCRYPT_KEY_IDENTIFIER_HEX_SIZE];
+ #endif
+-			uint8_t tar_policy[size];
+-			char policy_hex[hex_size];
+ 			memset(tar_policy, 0, sizeof(tar_policy));
+-			bytes_to_hex(descriptor, size, policy_hex);
++#ifdef USE_FSCRYPT_POLICY_V1
++			bytes_to_hex(t->th_buf.fep->master_key_descriptor, FS_KEY_DESCRIPTOR_SIZE, policy_hex);
++#else
++			bytes_to_hex(t->th_buf.fep->master_key_identifier, FSCRYPT_KEY_IDENTIFIER_SIZE, policy_hex);
++#endif
+ 			if (lookup_ref_key(t->th_buf.fep,  &tar_policy[0])) {
+-				if (strncmp((char *) tar_policy, user_ce, sizeof(user_ce) - 1) == 0 
+-				|| strncmp((char *) tar_policy, user_de, sizeof(user_de) - 1) == 0 
+-				|| strncmp((char *) tar_policy, system_de, sizeof(system_de)) == 0) {
+-					memcpy(descriptor, tar_policy, size);
+-					LOG("found fscrypt policy '%s' - '%s' - '%s'\n", realname, descriptor, policy_hex);
++				if (strncmp((char *) tar_policy, USER_CE_FSCRYPT_POLICY, sizeof(USER_CE_FSCRYPT_POLICY) - 1) == 0 
++				|| strncmp((char *) tar_policy, USER_DE_FSCRYPT_POLICY, sizeof(USER_DE_FSCRYPT_POLICY) - 1) == 0 
++				|| strncmp((char *) tar_policy, SYSTEM_DE_FSCRYPT_POLICY, sizeof(SYSTEM_DE_FSCRYPT_POLICY)) == 0) {
++#ifdef USE_FSCRYPT_POLICY_V1
++					memcpy(t->th_buf.fep->master_key_descriptor, tar_policy, FS_KEY_DESCRIPTOR_SIZE);
++					LOG("found fscrypt policy '%s' - '%s' - '%s'\n", realname, t->th_buf.fep->master_key_descriptor, policy_hex);
++#else
++					memcpy(t->th_buf.fep->master_key_identifier, tar_policy, FSCRYPT_KEY_IDENTIFIER_SIZE);
++					LOG("found fscrypt policy '%s' - '%s' - '%s'\n", realname, t->th_buf.fep->master_key_identifier, policy_hex);
++#endif
+ 				} else {
+ 					LOG("failed to match fscrypt tar policy for '%s' - '%s'\n", realname, policy_hex);
+ 					free(t->th_buf.fep);
+diff --git a/libtar/block.c b/libtar/block.c
+index aaedc8e8..c4df87a9 100755
+--- a/libtar/block.c
++++ b/libtar/block.c
+@@ -354,7 +354,11 @@ th_read(TAR *t)
+ #ifdef USE_FSCRYPT
+ 			start = strstr(buf, FSCRYPT_TAG);
+ 			if (start && start+FSCRYPT_TAG_LEN < buf+len) {
+-				t->th_buf.fep = (fscrypt_policy*)malloc(sizeof(fscrypt_policy));
++#ifdef USE_FSCRYPT_POLICY_V1
++				t->th_buf.fep = (struct fscrypt_policy_v1*)malloc(sizeof(struct fscrypt_policy_v1));
++#else
++				t->th_buf.fep = (struct fscrypt_policy_v2*)malloc(sizeof(struct fscrypt_policy_v2));
++#endif
+ 				if (!t->th_buf.fep) {
+ 					LOG("malloc failed for fscrypt policy\n");
+ 					return -1;
+@@ -362,14 +366,29 @@ th_read(TAR *t)
+ 				start += FSCRYPT_TAG_LEN;
+ 				if (*start == '0') {
+ 					start++;
+-					memcpy(get_policy(t->th_buf.fep), start, fscrypt_policy_size(t->th_buf.fep));
+-#ifdef DEBUG
+-					uint8_t version;
+-					char content[50];
+-					memcpy(&version, start, sizeof(version));
+-					get_policy_content(t->th_buf.fep, content);
+-					LOG("version: %u\n", version);
+-					LOG("    th_read(): FSCrypt policy detected: %s\n", content);
++#ifdef USE_FSCRYPT_POLICY_V1
++					char *newline_check = start + sizeof(struct fscrypt_policy_v1);
++#else
++					char *newline_check = start + sizeof(struct fscrypt_policy_v2);
++#endif
++					if (*newline_check != '\n')
++						LOG("did not find newline char in expected location, continuing anyway...\n");
++#ifdef USE_FSCRYPT_POLICY_V1
++					memcpy(t->th_buf.fep, start, sizeof(struct fscrypt_policy_v1));
++#else
++					memcpy(t->th_buf.fep, start, sizeof(struct fscrypt_policy_v2));
++#endif
++#ifdef DEBUG
++					LOG("    th_read(): FSCrypt policy detected: %i %i %i %i %s\n",
++						(int)t->th_buf.fep->version,
++						(int)t->th_buf.fep->contents_encryption_mode,
++						(int)t->th_buf.fep->filenames_encryption_mode,
++						(int)t->th_buf.fep->flags,
++#ifdef USE_FSCRYPT_POLICY_V1
++						t->th_buf.fep->master_key_descriptor);
++#else
++						t->th_buf.fep->master_key_identifier);
++#endif
+ #endif
+ 				}
+ 				else {
+@@ -578,15 +597,23 @@ th_write(TAR *t)
+ #ifdef USE_FSCRYPT
+ 	if((t->options & TAR_STORE_FSCRYPT_POL) && t->th_buf.fep != NULL)
+ 	{
++#ifdef DEBUG
++#ifdef USE_FSCRYPT_POLICY_V1
++		LOG("th_write(): using fscrypt_policy %s\n",
++		       t->th_buf.fep->master_key_descriptor);
++#else
++		LOG("th_write(): using fscrypt_policy %s\n",
++		       t->th_buf.fep->master_key_identifier);
++#endif
++#endif
+ 		/* setup size - EXT header has format "*size of this whole tag as ascii numbers* *space* *version code* *content* *newline* */
+ 		//                                                       size   newline
+-		uint8_t size, *descriptor;
+-		size = fscrypt_policy_size(t->th_buf.fep);
+-		descriptor = get_policy_descriptor(t->th_buf.fep);
+-#ifdef DEBUG
+-		LOG("th_write(): using fscrypt_policy %s\n", descriptor);
++#ifdef USE_FSCRYPT_POLICY_V1
++		sz = FSCRYPT_TAG_LEN + sizeof(struct fscrypt_policy_v1) + 1 + 3  +    1;
++#else
++		sz = FSCRYPT_TAG_LEN + sizeof(struct fscrypt_policy_v2) + 1 + 3  +    1;
+ #endif
+-		sz = FSCRYPT_TAG_LEN + size + 1 + 3  +    1;
++
+ 		if(sz >= 100) // another ascci digit for size
+ 			++sz;
+ 
+@@ -601,7 +628,11 @@ th_write(TAR *t)
+ 			total_sz += sz;
+ 
+ 		snprintf(ptr, T_BLOCKSIZE, "%d "FSCRYPT_TAG"0", (int)sz);
+-		memcpy(ptr + sz - size - 1, get_policy(t->th_buf.fep), size);
++#ifdef USE_FSCRYPT_POLICY_V1
++		memcpy(ptr + sz - sizeof(struct fscrypt_policy_v1) - 1, t->th_buf.fep, sizeof(struct fscrypt_policy_v1));
++#else
++		memcpy(ptr + sz - sizeof(struct fscrypt_policy_v2) - 1, t->th_buf.fep, sizeof(struct fscrypt_policy_v2));
++#endif
+ 		char *nlptr = ptr + sz - 1;
+ 		*nlptr = '\n';
+ 		ptr += sz;
+diff --git a/libtar/extract.c b/libtar/extract.c
+index be989b03..85e3e407 100755
+--- a/libtar/extract.c
++++ b/libtar/extract.c
+@@ -557,26 +557,44 @@ tar_extract_dir(TAR *t, const char *realname)
+ #ifdef USE_FSCRYPT
+ 	if(t->th_buf.fep != NULL)
+ 	{
+-		uint8_t hex_size, size, *descriptor;
+-		hex_size = get_policy_size(t->th_buf.fep, true);
+-		size = get_policy_size(t->th_buf.fep, false);
+-		descriptor = get_policy_descriptor(t->th_buf.fep);
+-		char policy_hex[hex_size];
++#ifdef USE_FSCRYPT_POLICY_V1
++		char policy_hex[FS_KEY_DESCRIPTOR_SIZE_HEX];
++#else
++		char policy_hex[FSCRYPT_KEY_IDENTIFIER_HEX_SIZE];
++#endif
+ #ifdef DEBUG
+-		bytes_to_hex(descriptor, size, policy_hex);
++#ifdef USE_FSCRYPT_POLICY_V1
++		bytes_to_hex(t->th_buf.fep->master_key_descriptor, FS_KEY_DESCRIPTOR_SIZE, policy_hex);
++#else
++		bytes_to_hex(t->th_buf.fep->master_key_identifier, FSCRYPT_KEY_IDENTIFIER_SIZE, policy_hex);
++#endif
+ 		LOG("tar_extract_dir(): restoring fscrypt policy %s to dir %s\n", (char *)policy_hex, realname);
+ #endif
+ 		bool policy_lookup_error = false;
+-		uint8_t binary_policy[size];
+-		memset(&binary_policy, 0, size);
++#ifdef USE_FSCRYPT_POLICY_V1
++		uint8_t binary_policy[FS_KEY_DESCRIPTOR_SIZE];
++		memset(&binary_policy, 0, FS_KEY_DESCRIPTOR_SIZE);
++#else
++		uint8_t binary_policy[FSCRYPT_KEY_IDENTIFIER_SIZE];
++		memset(&binary_policy, 0, FSCRYPT_KEY_IDENTIFIER_SIZE);
++#endif
+ 
+-		if (!lookup_ref_tar(t->th_buf.fep, &binary_policy[0])) {
+-			LOG("error looking up fscrypt policy for '%s' - %s\n", realname, descriptor);
++#ifdef USE_FSCRYPT_POLICY_V1
++		if (!lookup_ref_tar(t->th_buf.fep->master_key_descriptor, &binary_policy[0])) {
++			LOG("error looking up fscrypt policy for '%s' - %s\n", realname, t->th_buf.fep->master_key_descriptor);
+ 			policy_lookup_error = true;
+ 		}
+-		memcpy(descriptor, binary_policy, size);
+-		bytes_to_hex(descriptor, size, policy_hex);
+-		if (!policy_lookup_error)
++		memcpy(&t->th_buf.fep->master_key_descriptor, binary_policy, FS_KEY_DESCRIPTOR_SIZE);
++		bytes_to_hex(t->th_buf.fep->master_key_descriptor, FS_KEY_DESCRIPTOR_SIZE, policy_hex);
++#else
++		if (!lookup_ref_tar(t->th_buf.fep->master_key_identifier, &binary_policy[0])) {
++			LOG("error looking up fscrypt policy for '%s' - %s\n", realname, t->th_buf.fep->master_key_identifier);
++			policy_lookup_error = true;
++		}
++		memcpy(&t->th_buf.fep->master_key_identifier, binary_policy, FSCRYPT_KEY_IDENTIFIER_SIZE);
++		bytes_to_hex(t->th_buf.fep->master_key_identifier, FSCRYPT_KEY_IDENTIFIER_SIZE, policy_hex);
++#endif
++		if (!policy_lookup_error) 
+ 		{
+ 			LOG("attempting to restore policy: %s\n", policy_hex);
+ 			if (!fscrypt_policy_set_struct(realname, t->th_buf.fep))
+diff --git a/libtar/libtar.h b/libtar/libtar.h
+index f42b2010..8013e614 100755
+--- a/libtar/libtar.h
++++ b/libtar/libtar.h
+@@ -71,7 +71,11 @@ struct tar_header
+ 	char *gnu_longlink;
+ 	char *selinux_context;
+ #ifdef USE_FSCRYPT
+-	fscrypt_policy  *fep;
++#ifdef USE_FSCRYPT_POLICY_V1
++	struct fscrypt_policy_v1 *fep;
++#else
++	struct fscrypt_policy_v2  *fep;
++#endif
+ #endif
+ 	int has_cap_data;
+ 	struct vfs_cap_data cap_data;
+diff --git a/libtar/output.c b/libtar/output.c
+index 3f57c831..8611b415 100755
+--- a/libtar/output.c
++++ b/libtar/output.c
+@@ -60,9 +60,15 @@ th_print(TAR *t)
+ 	       (t->th_buf.gnu_longname ? t->th_buf.gnu_longname : "[NULL]"));
+ 	LOG("  gnu_longlink = \"%s\"\n",
+ 	       (t->th_buf.gnu_longlink ? t->th_buf.gnu_longlink : "[NULL]"));
++		   
+ #ifdef USE_FSCRYPT
++#ifdef USE_FSCRYPT_POLICY_V1
+ 	LOG("  fep = \"%s\"\n",
+-		(t->th_buf.fep ? get_policy_descriptor(t->th_buf.fep) : (uint8_t*) "[NULL]"));
++	       (t->th_buf.fep ? t->th_buf.fep->master_key_descriptor : (uint8_t*) "[NULL]"));
++#else
++	LOG("  fep = \"%s\"\n",
++	       (t->th_buf.fep ? t->th_buf.fep->master_key_identifier : (uint8_t*) "[NULL]"));
++#endif
+ #endif
+ }
+ 
+-- 
+2.56.1
+
