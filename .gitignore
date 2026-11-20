@@ -22,6 +22,7 @@
 !/tools/
 /tools/*
 !/tools/slot_switch.py
+!/tools/check_ramdisk_libs.py
 
 # --- TWRP device tree --------------------------------------------------------
 # Re-include device/, but only the xiaomi/degas branch (other vendors that the
