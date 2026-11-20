@@ -83,6 +83,14 @@ jobs:
           source build/envsetup.sh
           lunch "$LUNCH"
           mka vendorbootimage -j"$(nproc --all)"
+          # TWRP copies libs/binaries into the ramdisk in post-install commands
+          # that don't wait for their sources, so a late-built file can be
+          # skipped. Rerun the copy now that everything is installed.
+          rm -f out/target/product/degas/recovery/root/relink_*-timestamp
+          mka vendorbootimage -j"$(nproc --all)"
+
+      - name: Check ramdisk libraries
+        run: python3 "$GITHUB_WORKSPACE/tree/tools/check_ramdisk_libs.py" "$GITHUB_WORKSPACE/src/out/target/product/degas/recovery/root"
 
       - name: Collect image
         id: img
