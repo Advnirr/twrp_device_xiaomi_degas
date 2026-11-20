@@ -123,11 +123,18 @@ TARGET_USES_LOGD := true
 # Native OMAPI service for the Weaver HAL (device/xiaomi/degas/omapi): built as
 # a vendor binary, copied into the recovery ramdisk's /vendor/bin/hw.
 TW_RECOVERY_ADDITIONAL_RELINK_VENDOR_HW_BINARY_FILES += $(TARGET_OUT_VENDOR_EXECUTABLES)/hw/se_omapi_recovery
+# AOSP 14 installs hwservicemanager in system_ext, but TWRP's relink list
+# still looks in system/bin, so it silently went missing.
+TW_RECOVERY_ADDITIONAL_RELINK_BINARY_FILES += $(TARGET_OUT_SYSTEM_EXT_EXECUTABLES)/hwservicemanager
 # AIDL NDK libs that the 14.1 keystore/crypto libs need but TWRP's relink
-# list (prebuilt/Android.mk) still names by their old HIDL names. Without
-# aaid_aidl-cpp, libtar and so the recovery binary fail to load.
+# list (prebuilt/Android.mk) doesn't have: it still uses old HIDL names and
+# keymint-V1. System binaries only search /system/lib64, so the keymint-V3
+# copy from the vendor blobs doesn't count. Without these, recovery and
+# keystore2 fail with "CANNOT LINK EXECUTABLE".
 TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.security.aaid_aidl-cpp.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.security.keymint-V3-ndk.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.security.rkp-V3-ndk.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.confirmationui-V1-ndk.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.system.suspend-V1-ndk.so
 # /data comes from the ROM's vendor fstab, so AOSP ROMs with other f2fs and

@@ -82,5 +82,7 @@ PRODUCT_COPY_FILES += \
 # Relinked into recovery (BoardConfig.mk), so they must be built.
 PRODUCT_PACKAGES += \
     android.security.aaid_aidl-cpp \
+    android.hardware.security.keymint-V3-ndk \
+    android.hardware.security.rkp-V3-ndk \
     android.hardware.confirmationui-V1-ndk \
     android.system.suspend-V1-ndk
