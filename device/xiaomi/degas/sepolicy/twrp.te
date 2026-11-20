@@ -1,0 +1,20 @@
+# Copy of private/twrp.te from TeamWin android_system_sepolicy (android-14.1).
+# The twrp-14.1 minimal manifest uses AOSP system/sepolicy, which lacks it, so
+# without this the recovery domain is enforcing and TWRP dies at start
+# (hangs on the Mi logo, logd fails with "entrypoint" denials).
+recovery_only(`
+  permissive recovery;
+  permissive init;
+  permissive logd;
+  permissive adbd;
+  permissive fastbootd;
+  permissive postinstall;
+  permissive ueventd;
+  allow kernel unlabeled:file rw_file_perms;
+  allow kernel tmpfs:file { read };
+  allow kernel recovery:fd { use };
+  allow kernel adb_data_file:file { read write };
+  allow unlabeled unlabeled:filesystem associate;
+  allow vendor_init rootfs:dir read;
+  allow logd rootfs:file { entrypoint };
+')
