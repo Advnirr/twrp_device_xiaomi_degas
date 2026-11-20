@@ -1,5 +1,5 @@
-# Touch driver bring-up (Goodix). The patched xiaomi_touch_common.ko lives in
-# the prebuilt vendor-ramdisk modules fragment; these sysfs writes configure it.
+# Touch (Goodix). The patched xiaomi_touch_common.ko is in recovery/root/lib/modules
+# and overrides the stock one in recovery; these writes configure it.
 on early-init
     write /sys/class/touch/touch_dev/enable_touch_raw 0
 
@@ -55,7 +55,8 @@ on property:sys.usb.config=mtp,adb && property:sys.usb.ffs.ready=1 && property:s
 
 # ═══════════════════════════════════════════════════════════════════════════
 # FBE decryption: stock HyperOS 306 MiTEE stack (tee-supplicant, KeyMint 3.0,
-# Gatekeeper) — method proven on duchamp (same SoC/TEE), adapted to degas.
+# Gatekeeper). Method from Dip184's duchamp tree (same TEE), brought to degas
+# by sigmapro555eshkere's OrangeFox port.
 #
 # degas difference: the TEE REE-FS store (dirf.db + objects, incl. KeyMint's
 # SecureDeletionSecrets) lives in /mnt/vendor/persist/data (tee-supplicant
@@ -88,7 +89,7 @@ on fs
     setprop ro.hardware.gatekeeper mitee
 
 # Vendor binaries must resolve their own copies first: some stock libs share a
-# name with the OFRP-built ones (e.g. lib_android_keymaster_keymint_utils.so).
+# name with the ones TWRP builds (e.g. lib_android_keymaster_keymint_utils.so).
 service tee-supplicant /vendor/bin/tee-supplicant
     user system
     group system secure_element nfc
@@ -111,7 +112,8 @@ service vendor.gatekeeper_mitee /vendor/bin/hw/android.hardware.gatekeeper-servi
     seclabel u:r:recovery:s0
     disabled
 
-# Gatekeeper must come up after KeyMint (duchamp: HAT signature race, -26)
+# Workaround: Gatekeeper started together with KeyMint hit a HAT signature race
+# (-26) on duchamp. Not checked on degas; the sleep only orders the two.
 service delayed_gatekeeper /system/bin/sh -c "sleep 1; start vendor.gatekeeper_mitee"
     user root
     group root

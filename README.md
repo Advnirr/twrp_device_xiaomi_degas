@@ -10,10 +10,11 @@ Dimensity 8300-Ultra `mt6897`, HyperOS 3 / Android 16). The recovery lives in
 
 ## Status
 
-Beta. Flashing, raw partition backup/restore, wipe, ADB, sideload, MTP, OTG and
-A/B slot switching work.
+The released v1.0-beta (TWRP 12.1, no decryption) works: flashing, raw
+partition backup/restore, wipe, ADB, sideload, MTP, OTG and A/B slot switching.
 
-`/data` decryption is on `main` but **not released and not tested on a device yet**.
+`main` is moving to twrp-14.1 with `/data` decryption. It is **not released and
+does not boot to the UI yet**.
 It uses the stock MiTEE stack (tee-supplicant, KeyMint 3.0, Gatekeeper, NXP
 Weaver) inside recovery. The method comes from
 [sigmapro555eshkere's OrangeFox tree](https://github.com/notnotshuts/ofox_device_xiaomi_degas),
@@ -40,14 +41,15 @@ The bundled kernel modules and TEE blobs are from HyperOS
 ```
 device/xiaomi/degas/
   BoardConfig.mk, device.mk, twrp_degas.mk
-  prebuilt/                 stock boot.img, dtbo.img, dtb
+  prebuilt/dtb/              stock dtb
   vendor_ramdisk/           stock 306 kernel modules + first-stage fstab
   recovery/root/            recovery ramdisk: init.recovery.mt6897.rc, fstab,
                             Goodix firmware, MiTEE/Weaver/eSE blobs, prepdecrypt
   recovery/tee-blobs.sha256 checksums of the bundled TEE/eSE binaries
   omapi/                    native OMAPI service for the Weaver HAL
   sepolicy/
-patches/                    patches for bootable/recovery (A/B slot switch, splash)
+patches/                    patches for bootable/recovery (A/B slot switch, splash,
+                            twrp-14.1 build fixes)
 tools/slot_switch.py        host tool: switch A/B slot via misc bootloader_control
 docs/RESEARCH.md            decryption notes
 ```

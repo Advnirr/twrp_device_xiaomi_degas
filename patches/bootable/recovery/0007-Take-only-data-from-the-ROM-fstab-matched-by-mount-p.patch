@@ -1,0 +1,60 @@
+From 26c544bfccaf3b165b636f72d14227299baa5797 Mon Sep 17 00:00:00 2001
+From: Advnirr <mikhail@advnirr.org>
+Date: Fri, 20 Nov 2026 18:13:45 +0300
+Subject: [PATCH] Take only /data from the ROM fstab, matched by mount point
+
+The additional (ROM) fstab pass matched "/data" as a substring, so a
+HyperOS line like "overlay /product/data-app ..." replaced /data. Match
+the mount point exactly. With TW_KEEP_RECOVERY_METADATA the ROM's
+/metadata entry is skipped, so a read-only /metadata from recovery.fstab
+stays read-only.
+---
+ Android.mk           |  3 +++
+ partitionmanager.cpp | 12 ++++++++++--
+ 2 files changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/Android.mk b/Android.mk
+index a6e6b48..f593a07 100755
+--- a/Android.mk
++++ b/Android.mk
+@@ -458,6 +458,9 @@ endif
+ ifeq ($(TW_SKIP_ADDITIONAL_FSTAB), true)
+     LOCAL_CFLAGS += -DTW_SKIP_ADDITIONAL_FSTAB
+ endif
++ifeq ($(TW_KEEP_RECOVERY_METADATA), true)
++    LOCAL_CFLAGS += -DTW_KEEP_RECOVERY_METADATA
++endif
+ ifeq ($(TW_FORCE_KEYMASTER_VER), true)
+     LOCAL_CFLAGS += -DTW_FORCE_KEYMASTER_VER
+ endif
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 8465245..58aed43 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -348,13 +348,21 @@ parse:
+ 			continue;
+ 
+ 		if (parse_userdata) {
+-			if (strstr(fstab_line, "/metadata") && !strstr(fstab_line, "/data")) {
++			// Match the mount point (2nd field), not a substring: ROM fstabs
++			// have lines like "overlay /product/data-app overlay ...".
++			char mnt[256] = "";
++			sscanf(fstab_line, "%*s %255s", mnt);
++			if (strcmp(mnt, "/metadata") == 0) {
++#ifdef TW_KEEP_RECOVERY_METADATA
++				// Keep /metadata from recovery.fstab (e.g. read-only).
++				continue;
++#endif
+ 				if (meta) {
+ 					Partitions.erase(std::find(Partitions.begin(), Partitions.end(), meta));
+ 					delete meta;
+ 					meta = NULL;
+ 				}
+-			} else if (strstr(fstab_line, "/data")) {
++			} else if (strcmp(mnt, "/data") == 0) {
+ 				if (data) {
+ 					Partitions.erase(std::find(Partitions.begin(), Partitions.end(), data));
+ 					delete data;
+-- 
+2.56.1
+

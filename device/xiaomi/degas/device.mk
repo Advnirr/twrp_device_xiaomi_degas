@@ -13,7 +13,7 @@ AB_OTA_POSTINSTALL_CONFIG += \
     POSTINSTALL_OPTIONAL_system=true
 
 PRODUCT_PACKAGES += \
-    otapreopt_script 
+    otapreopt_script
 
 # API
 PRODUCT_SHIPPING_API_LEVEL := 32
@@ -42,10 +42,7 @@ PRODUCT_PACKAGES += \
     update_verifier \
     update_engine_sideload
 
-# NOTE: FBE decrypt is parked (TEE RoT-bound, unreachable from recovery), so the
-# vold / keymaster / gatekeeper packages were removed — they only bloated the
-# ramdisk. The health@2.0 HAL was also dropped: battery now reads sysfs directly
-# (TW_USE_LEGACY_BATTERY_SERVICES), so the HAL is no longer needed.
+# No health HAL: battery is read from sysfs (TW_USE_LEGACY_BATTERY_SERVICES).
 
 # ── vendor_boot ramdisk00 (platform, used for normal boot AND recovery) ──────
 # This is a TARGET_NO_KERNEL build: the vendor kernel modules are not built, so
@@ -57,7 +54,8 @@ PRODUCT_COPY_FILES += \
     $(call find-copy-subdir-files,*,$(LOCAL_PATH)/vendor_ramdisk/lib/modules,$(TARGET_COPY_OUT_VENDOR_RAMDISK)/lib/modules)
 
 # First-stage fstab. The generated vendor ramdisk has none, and first-stage init
-# needs it to mount system/vendor/... (and the ColorOS-port my_* partitions).
+# needs it to mount system/vendor/... Normal boot uses it too, so it is the stock
+# HyperOS fstab plus the ColorOS my_* entries (nofail).
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/vendor_ramdisk/first_stage_ramdisk/fstab.mt6897:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.mt6897
 

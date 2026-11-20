@@ -92,26 +92,16 @@ TW_BRIGHTNESS_PATH := "/sys/class/leds/lcd-backlight/brightness"
 TW_MAX_BRIGHTNESS := 2047
 TW_DEFAULT_BRIGHTNESS := 1200
 TW_HAPTICS_OEM_VIBRATOR := true
-# Touch and display
 BOARD_HAS_MTK_HARDWARE := true
-TW_INPUT_BLACKLIST := "hbtp_vm"
 
-# Battery — read sysfs directly instead of the health HAL. Without
-# TW_USE_LEGACY_BATTERY_SERVICES, TWRP queries android.hardware.health over
-# binder, which is unreliable in standalone recovery → stuck at 100% / only
-# updates after a manual restart. Legacy mode reads the gauge node directly.
-# USB: MTP enabled. The matching ConfigFS support (ffs.mtp function + mount +
-# the `on property:sys.usb.config=mtp,adb ... configfs=1` bind trigger) is added
-# via init.recovery.mt6897.rc. Without it,
-# enabling MTP would unbind the gadget UDC and never rebind -> all USB dies.
-
+# Battery: read sysfs instead of the health HAL. Over binder the HAL is
+# unreliable in recovery (stuck at 100%, updates only after a restart).
 TW_USE_LEGACY_BATTERY_SERVICES := true
-# Pin the real gauge node (battery + bms are both type=Battery, plus many
-# charger nodes → auto-detect was ambiguous). capacity/status track real charge.
+# battery and bms are both type=Battery, so auto-detect picks the wrong one.
 TW_CUSTOM_BATTERY_PATH := /sys/class/power_supply/battery
-# TW_SCREEN_BLANK_ON_BOOT := true
-# TW_NO_SCREEN_BLANK := true
-# TW_NO_SCREEN_TIMEOUT := true
+
+# MTP needs the ConfigFS ffs.mtp function and bind trigger from
+# init.recovery.mt6897.rc, otherwise enabling it unbinds the UDC and USB dies.
 
 # SEPOLICY
 BOARD_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
@@ -140,10 +130,10 @@ TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.security.aaid_aidl-cpp.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.confirmationui-V1-ndk.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.system.suspend-V1-ndk.so
-# Use only recovery.fstab. Otherwise TWRP re-parses the vendor fstab
-# (/etc/additional.fstab) and its stock /metadata options replace ours, so
-# /metadata got mounted rw although recovery.fstab says ro.
-TW_SKIP_ADDITIONAL_FSTAB := true
+# /data comes from the ROM's vendor fstab, so AOSP ROMs with other f2fs and
+# encryption options (e.g. hctr2 filenames) work. /metadata stays the
+# read-only entry from recovery.fstab (patch 0007).
+TW_KEEP_RECOVERY_METADATA := true
 # PLATFORM_SECURITY_PATCH := 2099-12-31 is deliberately NOT used: KeyMint's
 # OS version / patch levels are set at runtime from the device build.props by
 # degas_prepdecrypt.sh. A recovery patch level above Android's would make
