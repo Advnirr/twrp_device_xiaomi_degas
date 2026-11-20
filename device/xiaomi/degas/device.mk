@@ -80,3 +80,9 @@ ifeq ($(DEGAS_UBSAN_RT),)
 endif
 PRODUCT_COPY_FILES += \
     $(DEGAS_UBSAN_RT):$(TARGET_COPY_OUT_RECOVERY)/root/vendor/lib64/libclang_rt.ubsan_standalone-aarch64-android.so
+
+# Relinked into recovery (BoardConfig.mk), so they must be built.
+PRODUCT_PACKAGES += \
+    android.security.aaid_aidl-cpp \
+    android.hardware.confirmationui-V1-ndk \
+    android.system.suspend-V1-ndk

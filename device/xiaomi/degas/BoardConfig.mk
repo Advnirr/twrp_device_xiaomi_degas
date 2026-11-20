@@ -133,6 +133,13 @@ TARGET_USES_LOGD := true
 # Native OMAPI service for the Weaver HAL (device/xiaomi/degas/omapi): built as
 # a vendor binary, copied into the recovery ramdisk's /vendor/bin/hw.
 TW_RECOVERY_ADDITIONAL_RELINK_VENDOR_HW_BINARY_FILES += $(TARGET_OUT_VENDOR_EXECUTABLES)/hw/se_omapi_recovery
+# AIDL NDK libs that the 14.1 keystore/crypto libs need but TWRP's relink
+# list (prebuilt/Android.mk) still names by their old HIDL names. Without
+# aaid_aidl-cpp, libtar and so the recovery binary fail to load.
+TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.security.aaid_aidl-cpp.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.confirmationui-V1-ndk.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.system.suspend-V1-ndk.so
 # Use only recovery.fstab. Otherwise TWRP re-parses the vendor fstab
 # (/etc/additional.fstab) and its stock /metadata options replace ours, so
 # /metadata got mounted rw although recovery.fstab says ro.
