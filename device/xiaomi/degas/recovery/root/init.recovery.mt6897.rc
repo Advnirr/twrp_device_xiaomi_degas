@@ -201,3 +201,25 @@ on property:twrp.all.users.decrypted=true
     stop vendor.gatekeeper_mitee
     stop vendor.keymint-mitee
     stop tee-supplicant
+
+# fastbootd blocks forever in HIDL getService(IHealth) because TWRP ships the
+# health@2.1 manifest + service but, with TW_USE_LEGACY_BATTERY_SERVICES, never
+# starts it; fastbootd then never writes its FFS descriptors and the USB
+# fastboot gadget never enumerates. Start the HAL when fastboot is requested.
+on property:sys.usb.config=fastboot
+    start health-hal-2-1
+
+# Stock HyperOS recovery boot control HAL (OS3.0.305.0, vendor_boot ramdisk):
+# fastbootd needs IBootControl for current-slot / set_active and to open the
+# logical partitions of the active slot. Stock seclabel is hal_bootctl_default;
+# TWRP's recovery domain is used instead (permissive via twrp.te).
+service vendor.boot-default /system/bin/hw/android.hardware.boot-service.mtk_recovery
+    user root
+    group root
+    seclabel u:r:recovery:s0
+    interface aidl android.hardware.boot.IBootControl/default
+    disabled
+
+on boot
+    start vendor.boot-default
+
