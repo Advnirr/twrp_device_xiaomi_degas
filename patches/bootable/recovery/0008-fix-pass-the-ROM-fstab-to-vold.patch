@@ -1,0 +1,31 @@
+From 6bcdc8c0aeea2459e53ba52e38fb4de93b82d5ec Mon Sep 17 00:00:00 2001
+From: Mikhail Mlhcnn <mikhail@advnirr.org>
+Date: Sat, 21 Nov 2026 19:43:17 +0300
+Subject: [PATCH] fix: pass the ROM fstab to vold
+
+vold 14.1 takes a zoned block device before the optional fstab path.
+Passing the fstab as the zoned device makes vold use the default fstab
+and look for metadata keys under the zoned-device subdirectories.
+---
+ partitionmanager.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 58aed43..3376845 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -603,7 +603,10 @@ void TWPartitionManager::Decrypt_Data() {
+ 			Set_Crypto_Type("file");
+ #ifdef TW_INCLUDE_FBE_METADATA_DECRYPT
+ #ifdef USE_FSCRYPT
+-			if (android::vold::fscrypt_mount_metadata_encrypted(Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point, false, false, Decrypt_Data->Current_File_System, TWFunc::Path_Exists(additional_fstab) ? additional_fstab : "")) {
++			if (android::vold::fscrypt_mount_metadata_encrypted(
++			        Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point,
++			        false, false, Decrypt_Data->Current_File_System, /*zoned_device=*/"",
++			        TWFunc::Path_Exists(additional_fstab) ? additional_fstab : "")) {
+ 				std::string crypto_blkdev = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "error");
+ 				Decrypt_Data->Decrypted_Block_Device = crypto_blkdev;
+ 				LOGINFO("Successfully decrypted metadata encrypted data partition with new block device: '%s'\n", crypto_blkdev.c_str());
+-- 
+2.56.1
+
