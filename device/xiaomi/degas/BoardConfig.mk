@@ -136,7 +136,8 @@ TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.security.keymint-V3-ndk.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.security.rkp-V3-ndk.so \
     $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.confirmationui-V1-ndk.so \
-    $(TARGET_OUT_SHARED_LIBRARIES)/android.system.suspend-V1-ndk.so
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.system.suspend-V1-ndk.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.weaver-V2-ndk.so
 # /data comes from the ROM's vendor fstab, so AOSP ROMs with other f2fs and
 # encryption options (e.g. hctr2 filenames) work. /metadata stays the
 # read-only entry from recovery.fstab (patch 0007).
