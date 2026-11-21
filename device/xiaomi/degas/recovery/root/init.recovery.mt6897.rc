@@ -2,11 +2,19 @@
 # and overrides the stock one in recovery; these writes configure it.
 on early-init
     write /sys/class/touch/touch_dev/enable_touch_raw 0
+    # logd is 0550 root:root in the ramdisk but runs as user logd.
+    chown root logd /system/bin/logd
 
 on boot
     write /sys/class/touch/touch_dev/enable_touch_raw 0
     write /sys/class/touch/touch_dev/panel_display "U"
     start degas_sbin_getprop
+
+# FocalTech-panel units come up with enable_touch_raw=1 (host-processing/THP
+# mode, no input events without Xiaomi's userspace). Force firmware reporting
+# again once the GUI is up, in case the driver re-enabled raw mode.
+on property:init.svc.recovery=running
+    write /sys/class/touch/touch_dev/enable_touch_raw 0
 
 # AnyKernel3 (and other zips using its update-binary) bind the ROM's /system
 # over ours and mount APEXes with `-t ext4` only; ColorOS/HyperOS APEXes are
