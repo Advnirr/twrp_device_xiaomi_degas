@@ -1,0 +1,25 @@
+From: nyxianglyph <nyxianglyph@gmail.com>
+Subject: [PATCH] Pass the ROM fstab as fstab_path, not zoned_device
+
+vold android-14.1 added a zoned_device parameter before fstab_path in
+fscrypt_mount_metadata_encrypted(), but this call was not updated, so the
+additional fstab path landed in zoned_device. vold then appends "/default"
+to the metadata key dir (/metadata/vold/metadata_encryption/default/key),
+does not find the key and metadata decryption fails ("read_key failed in
+mountFstab"). Only visible when the additional fstab is used, i.e. without
+TW_SKIP_ADDITIONAL_FSTAB.
+---
+diff --git a/partitionmanager.cpp b/partitionmanager.cpp
+index 58aed43..355f022 100755
+--- a/partitionmanager.cpp
++++ b/partitionmanager.cpp
+@@ -603,7 +603,8 @@ void TWPartitionManager::Decrypt_Data() {
+ 			Set_Crypto_Type("file");
+ #ifdef TW_INCLUDE_FBE_METADATA_DECRYPT
+ #ifdef USE_FSCRYPT
+-			if (android::vold::fscrypt_mount_metadata_encrypted(Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point, false, false, Decrypt_Data->Current_File_System, TWFunc::Path_Exists(additional_fstab) ? additional_fstab : "")) {
++			if (android::vold::fscrypt_mount_metadata_encrypted(Decrypt_Data->Actual_Block_Device, Decrypt_Data->Mount_Point, false, false, Decrypt_Data->Current_File_System,
++					/* zoned_device */ "", TWFunc::Path_Exists(additional_fstab) ? additional_fstab : "")) {
+ 				std::string crypto_blkdev = android::base::GetProperty("ro.crypto.fs_crypto_blkdev", "error");
+ 				Decrypt_Data->Decrypted_Block_Device = crypto_blkdev;
+ 				LOGINFO("Successfully decrypted metadata encrypted data partition with new block device: '%s'\n", crypto_blkdev.c_str());
