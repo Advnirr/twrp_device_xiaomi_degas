@@ -101,7 +101,7 @@ jobs:
           echo "vendor_boot.img: $size bytes (partition: 67108864)"
           [ "$size" -le 67108864 ] || { echo "image does not fit the 64 MiB vendor_boot" >&2; exit 1; }
           tag="${{ inputs.release_tag }}"
-          name="twrp-3.7.1_14-Advnirr-degas-${tag:-ci${{ github.run_number }}}-vendor_boot.img"
+          name="twrp-3.7.1_14-nyxianglyph-degas-${tag:-ci${{ github.run_number }}}-vendor_boot.img"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$img" "$GITHUB_WORKSPACE/dist/$name"
           cd "$GITHUB_WORKSPACE/dist" && sha256sum "$name" > SHA256SUMS && cat SHA256SUMS

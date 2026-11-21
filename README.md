@@ -107,4 +107,4 @@ Apache License 2.0, see [LICENSE](LICENSE). Parts inherited from TWRP and AOSP
 keep their upstream licenses. Stock vendor binaries belong to their owners.
 
 ---
-*Maintained by Advnirr | [advnirr.org](https://advnirr.org)*
+*Maintained by nyxianglyph — fork of [Advnirr/twrp_device_xiaomi_degas](https://github.com/Advnirr/twrp_device_xiaomi_degas)*
